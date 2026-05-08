@@ -81,6 +81,33 @@ create table if not exists public.announcement_logs (
   sent_at timestamptz not null default now()
 );
 
+create or replace function public.handle_new_user_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.users_profile (id, display_name)
+  values (
+    new.id,
+    coalesce(
+      new.raw_user_meta_data ->> 'display_name',
+      split_part(new.email, '@', 1),
+      'Player'
+    )
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user_profile();
+
 create or replace function public.is_league_member(target_league uuid)
 returns boolean
 language sql
@@ -110,6 +137,38 @@ as $$
   );
 $$;
 
+create or replace function public.bootstrap_league(
+  league_name text,
+  stake numeric,
+  league_currency text default 'USD'
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_league_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  insert into public.leagues (name, stake_amount, currency, created_by)
+  values (league_name, stake, league_currency, auth.uid())
+  returning id into new_league_id;
+
+  insert into public.league_members (league_id, user_id, role, is_active)
+  values (new_league_id, auth.uid(), 'admin', true)
+  on conflict (league_id, user_id) do update
+    set role = 'admin', is_active = true;
+
+  return new_league_id;
+end;
+$$;
+
+grant execute on function public.bootstrap_league(text, numeric, text) to authenticated;
+
 alter table public.users_profile enable row level security;
 alter table public.leagues enable row level security;
 alter table public.league_members enable row level security;
@@ -132,10 +191,19 @@ create policy "members can read leagues"
 on public.leagues for select
 using (public.is_league_member(id));
 
-create policy "admins manage leagues"
-on public.leagues for all
+create policy "members can create leagues they own"
+on public.leagues for insert
+to authenticated
+with check (created_by = auth.uid());
+
+create policy "admins update leagues"
+on public.leagues for update
 using (public.is_league_admin(id))
 with check (public.is_league_admin(id));
+
+create policy "admins delete leagues"
+on public.leagues for delete
+using (public.is_league_admin(id));
 
 create policy "members can read league_members"
 on public.league_members for select
