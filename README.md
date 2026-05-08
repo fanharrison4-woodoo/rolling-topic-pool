@@ -86,7 +86,9 @@ Then open <http://localhost:3000>.
 
 ## Current state of this repo
 
-Right now the app is a UI prototype with mock data. It demonstrates:
+Right now the app is a UI prototype with mock data, plus initial Supabase wiring.
+
+It demonstrates:
 
 - league dashboard
 - rolling pool math
@@ -94,8 +96,16 @@ Right now the app is a UI prototype with mock data. It demonstrates:
 - player prediction editing mock
 - admin settlement flow mock
 - audit/history views
+- environment-based Supabase configuration status
 
-The next step is wiring the app to Supabase.
+Files added for backend setup:
+
+- `.env.example`
+- `src/lib/env.ts`
+- `src/lib/supabase.ts`
+- `supabase/schema.sql`
+
+The next step is running the schema in Supabase and enabling auth.
 
 ## Planned data model
 
@@ -120,6 +130,14 @@ A fuller draft is in [`docs/plan.md`](docs/plan.md).
 5. Create a Vercel project linked to the repo
 6. Set environment variables in Vercel
 7. Deploy and test end-to-end
+
+## Supabase setup
+
+1. Copy `.env.example` to `.env.local` for local development
+2. Set `NEXT_PUBLIC_SUPABASE_URL`
+3. Set `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. In Supabase SQL Editor, run `supabase/schema.sql`
+5. In Supabase Auth, enable Email login with magic links
 
 ## What still needs Harrison
 

@@ -25,20 +25,19 @@ I can prepare the app for deployment, but I cannot fully complete the account li
 
 ## 3. Supabase
 
-Please do this when ready:
+You already created the project and shared the public values. Nice.
 
-1. Create a new Supabase project
-2. Save these values:
-   - project URL
-   - anon public key
-   - service role key (keep private)
-3. Decide auth method for MVP:
-   - magic link email (recommended)
-   - Google login
-4. Share the project URL + anon key with me when you want me to wire the app
+Please do these exact steps next:
 
-Optional but useful:
-- create a dedicated organization/project name for PoolChain
+1. Open **Supabase → SQL Editor**
+2. Open the file `supabase/schema.sql` from this repo
+3. Paste it into SQL Editor and run it
+4. Open **Authentication → Providers → Email**
+5. Enable **Email** auth
+6. Enable **Magic Link** login
+7. If Supabase asks about site URL later, use your future Vercel URL first, then your custom domain if you add one
+
+Do **not** send me the service role key.
 
 ## 4. Product choices to confirm soon
 
@@ -56,13 +55,13 @@ I can continue on my own with:
 
 - cleaning up the UI prototype
 - adding real route structure
-- preparing Supabase schema files
-- adding placeholder auth flow
-- creating the public GitHub repo and pushing the current code
+- wiring the app to read/write from Supabase
+- adding a first pass magic-link auth flow
+- preparing Vercel env setup notes
 
 ## 6. What I need from you before backend wiring is finished
 
 I need:
-- your approval of the repo/app naming if you want changes
-- Vercel project access on your side
-- Supabase project credentials
+- you to run `supabase/schema.sql` in Supabase SQL Editor
+- you to enable Email + Magic Link auth in Supabase
+- Vercel project access on your side when we deploy
