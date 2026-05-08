@@ -178,51 +178,62 @@ alter table public.settlements enable row level security;
 alter table public.settlement_winners enable row level security;
 alter table public.announcement_logs enable row level security;
 
+drop policy if exists "profiles are readable by authenticated users" on public.users_profile;
 create policy "profiles are readable by authenticated users"
 on public.users_profile for select
 using (auth.role() = 'authenticated');
 
+drop policy if exists "users manage own profile" on public.users_profile;
 create policy "users manage own profile"
 on public.users_profile for all
 using (auth.uid() = id)
 with check (auth.uid() = id);
 
+drop policy if exists "members can read leagues" on public.leagues;
 create policy "members can read leagues"
 on public.leagues for select
 using (public.is_league_member(id));
 
+drop policy if exists "members can create leagues they own" on public.leagues;
 create policy "members can create leagues they own"
 on public.leagues for insert
 to authenticated
 with check (created_by = auth.uid());
 
+drop policy if exists "admins update leagues" on public.leagues;
 create policy "admins update leagues"
 on public.leagues for update
 using (public.is_league_admin(id))
 with check (public.is_league_admin(id));
 
+drop policy if exists "admins delete leagues" on public.leagues;
 create policy "admins delete leagues"
 on public.leagues for delete
 using (public.is_league_admin(id));
 
+drop policy if exists "members can read league_members" on public.league_members;
 create policy "members can read league_members"
 on public.league_members for select
 using (public.is_league_member(league_id));
 
+drop policy if exists "admins manage league_members" on public.league_members;
 create policy "admins manage league_members"
 on public.league_members for all
 using (public.is_league_admin(league_id))
 with check (public.is_league_admin(league_id));
 
+drop policy if exists "members can read topics" on public.topics;
 create policy "members can read topics"
 on public.topics for select
 using (public.is_league_member(league_id));
 
+drop policy if exists "admins manage topics" on public.topics;
 create policy "admins manage topics"
 on public.topics for all
 using (public.is_league_admin(league_id))
 with check (public.is_league_admin(league_id));
 
+drop policy if exists "members can read predictions" on public.predictions;
 create policy "members can read predictions"
 on public.predictions for select
 using (
@@ -234,6 +245,7 @@ using (
   )
 );
 
+drop policy if exists "players manage own predictions before close" on public.predictions;
 create policy "players manage own predictions before close"
 on public.predictions for all
 using (
@@ -261,6 +273,7 @@ with check (
   )
 );
 
+drop policy if exists "members can read settlements" on public.settlements;
 create policy "members can read settlements"
 on public.settlements for select
 using (
@@ -272,6 +285,7 @@ using (
   )
 );
 
+drop policy if exists "admins manage settlements" on public.settlements;
 create policy "admins manage settlements"
 on public.settlements for all
 using (
@@ -291,6 +305,7 @@ with check (
   )
 );
 
+drop policy if exists "members can read winner rows" on public.settlement_winners;
 create policy "members can read winner rows"
 on public.settlement_winners for select
 using (
@@ -303,6 +318,7 @@ using (
   )
 );
 
+drop policy if exists "admins manage winner rows" on public.settlement_winners;
 create policy "admins manage winner rows"
 on public.settlement_winners for all
 using (
@@ -324,6 +340,7 @@ with check (
   )
 );
 
+drop policy if exists "members can read announcement logs" on public.announcement_logs;
 create policy "members can read announcement logs"
 on public.announcement_logs for select
 using (
@@ -335,6 +352,7 @@ using (
   )
 );
 
+drop policy if exists "admins manage announcement logs" on public.announcement_logs;
 create policy "admins manage announcement logs"
 on public.announcement_logs for all
 using (
