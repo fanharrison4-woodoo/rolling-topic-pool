@@ -14,7 +14,7 @@ export function AuthStatusCard({ projectHost, configured }: AuthStatusCardProps)
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(() => Boolean(supabase));
-  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
@@ -22,32 +22,64 @@ export function AuthStatusCard({ projectHost, configured }: AuthStatusCardProps)
       return;
     }
 
+    const client = supabase;
     let isMounted = true;
 
-    supabase.auth.getSession().then(({ data, error }) => {
+    async function restoreSession() {
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get("code");
+      const errorDescription = url.searchParams.get("error_description") ?? url.searchParams.get("error");
+
+      if (errorDescription) {
+        if (!isMounted) {
+          return;
+        }
+        setAuthError(errorDescription);
+      }
+
+      if (code) {
+        const { error } = await client.auth.exchangeCodeForSession(code);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (error) {
+          setAuthError(`OAuth callback failed: ${error.message}`);
+        } else {
+          url.searchParams.delete("code");
+          url.searchParams.delete("state");
+          window.history.replaceState({}, "", url.toString());
+        }
+      }
+
+      const { data, error } = await client.auth.getSession();
+
       if (!isMounted) {
         return;
       }
 
       if (error) {
-        setSignOutError(error.message);
+        setAuthError(error.message);
       } else {
         setSession(data.session ?? null);
       }
 
       setLoading(false);
-    });
+    }
+
+    void restoreSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = client.auth.onAuthStateChange((_event, nextSession) => {
       if (!isMounted) {
         return;
       }
 
       setSession(nextSession ?? null);
       setLoading(false);
-      setSignOutError(null);
+      setAuthError(null);
     });
 
     return () => {
@@ -62,12 +94,12 @@ export function AuthStatusCard({ projectHost, configured }: AuthStatusCardProps)
     }
 
     setSigningOut(true);
-    setSignOutError(null);
+    setAuthError(null);
 
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      setSignOutError(error.message);
+      setAuthError(error.message);
     }
 
     setSigningOut(false);
@@ -124,7 +156,7 @@ export function AuthStatusCard({ projectHost, configured }: AuthStatusCardProps)
         </div>
       )}
 
-      {signOutError ? <p className="mt-3 text-sm text-rose-700">{signOutError}</p> : null}
+      {authError ? <p className="mt-3 text-sm text-rose-700">{authError}</p> : null}
     </div>
   );
 }
