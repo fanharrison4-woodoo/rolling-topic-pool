@@ -27,6 +27,35 @@ export function canLeagueAdminDeclareWinners(status: TopicStatus) {
   return normalizeTopicStatus(status) === "closed";
 }
 
+export function canLeagueAdminOpenTopic(status: TopicStatus) {
+  return normalizeTopicStatus(status) === "draft";
+}
+
+export function canLeagueAdminCloseTopic(status: TopicStatus) {
+  return normalizeTopicStatus(status) === "open";
+}
+
+export function getNextTopicStatusOnCreate(hasAnyOpenTopic: boolean): WorkflowTopicStatus {
+  return hasAnyOpenTopic ? "draft" : "open";
+}
+
+export interface WorkflowTopicSummary extends OrderedTopicCloseTime {
+  id: string;
+  status: TopicStatus;
+}
+
+export function getFeaturedTopicId(topics: WorkflowTopicSummary[]) {
+  const orderedTopics = [...topics].sort((a, b) => a.order - b.order);
+
+  return (
+    orderedTopics.find((topic) => normalizeTopicStatus(topic.status) === "closed")?.id ??
+    orderedTopics.find((topic) => normalizeTopicStatus(topic.status) === "open")?.id ??
+    orderedTopics.find((topic) => normalizeTopicStatus(topic.status) === "draft")?.id ??
+    orderedTopics[0]?.id ??
+    null
+  );
+}
+
 export interface OrderedTopicCloseTime {
   order: number;
   closeAt: string;

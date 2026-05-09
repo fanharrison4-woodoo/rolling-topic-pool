@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isAppAdminEmail } from "@/lib/app-admins";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
-import { canLeagueAdminDeclareWinners, getTopicDisplayStatus } from "@/lib/topic-rules";
+import {
+  canLeagueAdminCloseTopic,
+  canLeagueAdminDeclareWinners,
+  canLeagueAdminOpenTopic,
+  getFeaturedTopicId,
+  getNextTopicStatusOnCreate,
+  getTopicDisplayStatus,
+  validateTopicCloseTimesByOrder,
+} from "@/lib/topic-rules";
 import type { League, PoolState, Prediction, Topic } from "@/lib/types";
 
 interface LiveCurrentTopicSectionProps {
@@ -32,6 +40,14 @@ interface LiveSnapshot {
     status: Topic["status"];
     closeAt: string;
   } | null;
+  topics: {
+    id: string;
+    order: number;
+    title: string;
+    description: string;
+    status: Topic["status"];
+    closeAt: string;
+  }[];
   userPrediction: {
     id: string;
     text: string;
@@ -99,6 +115,7 @@ export function LiveCurrentTopicSection({
   const [topicStatus, setTopicStatus] = useState<string | null>(null);
   const [roleStatus, setRoleStatus] = useState<string | null>(null);
   const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
+  const [changingTopicId, setChangingTopicId] = useState<string | null>(null);
 
   const loadLiveState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) {
@@ -174,10 +191,16 @@ export function LiveCurrentTopicSection({
       return;
     }
 
-    const liveTopic =
-      topicsResult.data?.find((topic) => topic.status === "open") ??
-      topicsResult.data?.find((topic) => topic.status === "closed") ??
-      null;
+    const featuredTopicId = getFeaturedTopicId(
+      (topicsResult.data ?? []).map((topic) => ({
+        id: topic.id,
+        order: topic.order_index,
+        closeAt: topic.close_at,
+        status: topic.status,
+      })),
+    );
+
+    const liveTopic = topicsResult.data?.find((topic) => topic.id === featuredTopicId) ?? null;
 
     let livePrediction: LiveSnapshot["userPrediction"] = null;
 
@@ -252,6 +275,14 @@ export function LiveCurrentTopicSection({
             closeAt: liveTopic.close_at,
           }
         : null,
+      topics: (topicsResult.data ?? []).map((topic) => ({
+        id: topic.id,
+        order: topic.order_index,
+        title: topic.title,
+        description: topic.description ?? "",
+        status: topic.status,
+        closeAt: topic.close_at,
+      })),
       members: (membersResult.data ?? []).map((member) => ({
         userId: member.user_id,
         displayName: memberProfiles.get(member.user_id) ?? member.user_id,
@@ -474,7 +505,20 @@ export function LiveCurrentTopicSection({
     setError(null);
 
     const nextOrder = snapshot.league.topicCount + 1;
-    const nextStatus = snapshot.currentTopic?.status === "open" ? "upcoming" : "open";
+    const nextCloseAtIso = new Date(topicCloseAt).toISOString();
+    const nextStatus = getNextTopicStatusOnCreate(
+      snapshot.topics.some((topic) => getTopicDisplayStatus(topic.status) === "open"),
+    );
+    const orderingResult = validateTopicCloseTimesByOrder([
+      ...snapshot.topics.map((topic) => ({ order: topic.order, closeAt: topic.closeAt })),
+      { order: nextOrder, closeAt: nextCloseAtIso },
+    ]);
+
+    if (!orderingResult.valid) {
+      setTopicStatus("Close time conflicts with topic order. Later topics cannot close earlier than previous ones.");
+      setCreatingTopic(false);
+      return;
+    }
 
     const { error: createError } = await supabase.from("topics").insert({
       league_id: snapshot.league.id,
@@ -483,7 +527,7 @@ export function LiveCurrentTopicSection({
       description: nextDescription || null,
       status: nextStatus,
       open_at: nextStatus === "open" ? new Date().toISOString() : null,
-      close_at: new Date(topicCloseAt).toISOString(),
+      close_at: nextCloseAtIso,
       created_by: session.user.id,
     });
 
@@ -499,6 +543,36 @@ export function LiveCurrentTopicSection({
     setTopicStatus(nextStatus === "open" ? "Topic created and opened." : "Topic created as draft because there is already an active open topic.");
     await loadLiveState(session);
     setCreatingTopic(false);
+  }
+
+  async function handleChangeTopicStatus(topicId: string, nextStatus: "open" | "closed") {
+    if (!supabase || !session || !snapshot || snapshot.league.viewerRole !== "admin") {
+      return;
+    }
+
+    setChangingTopicId(topicId);
+    setTopicStatus(null);
+    setError(null);
+
+    const updates: { status: "open" | "closed"; open_at?: string } = { status: nextStatus };
+    if (nextStatus === "open") {
+      updates.open_at = new Date().toISOString();
+    }
+
+    const { error: updateError } = await supabase
+      .from("topics")
+      .update(updates)
+      .eq("id", topicId);
+
+    if (updateError) {
+      setTopicStatus(updateError.message);
+      setChangingTopicId(null);
+      return;
+    }
+
+    await loadLiveState(session);
+    setTopicStatus(nextStatus === "open" ? "Topic opened." : "Topic closed. Predictions are now viewable and ready for judging.");
+    setChangingTopicId(null);
   }
 
   async function handleChangeLeagueRole(userId: string, role: "admin" | "player") {
@@ -562,6 +636,7 @@ export function LiveCurrentTopicSection({
   const canJoinLeague = Boolean(session && snapshot && !snapshot.league.viewerRole);
   const isAppAdmin = Boolean(snapshot?.league.viewerIsAppAdmin);
   const canJudgeCurrentTopic = Boolean(snapshot?.currentTopic && canLeagueAdminDeclareWinners(snapshot.currentTopic.status));
+  const liveTopics = snapshot?.topics ?? [];
 
   return (
     <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -767,6 +842,57 @@ export function LiveCurrentTopicSection({
               {roleStatus ? <p className="mt-3 text-sm text-zinc-700">{roleStatus}</p> : null}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {liveTopics.length > 0 ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">League topic queue</p>
+              <p className="mt-1 text-sm text-zinc-600">Topic order drives carryover. Multiple topics may be open at the same time.</p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {liveTopics.map((topic) => {
+              const normalizedStatus = getTopicDisplayStatus(topic.status);
+              return (
+                <div key={topic.id} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-medium text-white">#{topic.order}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(topic.status)}`}>{normalizedStatus}</span>
+                      </div>
+                      <p className="mt-2 font-medium text-zinc-900">{topic.title}</p>
+                      <p className="mt-1 text-sm text-zinc-600">{topic.description}</p>
+                      <p className="mt-2 text-xs text-zinc-500">Closes {formatDate(topic.closeAt)}</p>
+                    </div>
+                    {isAdmin ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleChangeTopicStatus(topic.id, "open")}
+                          disabled={changingTopicId === topic.id || !canLeagueAdminOpenTopic(topic.status)}
+                          className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChangeTopicStatus(topic.id, "closed")}
+                          disabled={changingTopicId === topic.id || !canLeagueAdminCloseTopic(topic.status)}
+                          className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : null}
 

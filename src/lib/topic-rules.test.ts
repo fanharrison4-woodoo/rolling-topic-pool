@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   canLeagueAdminDeclareWinners,
+  canLeagueAdminCloseTopic,
   canLeagueAdminEditTopic,
+  canLeagueAdminOpenTopic,
   canPlayerSubmitPrediction,
+  getFeaturedTopicId,
+  getNextTopicStatusOnCreate,
   canPlayersViewAllPredictions,
   getTopicDisplayStatus,
   validateTopicCloseTimesByOrder,
@@ -43,6 +47,29 @@ describe("topic-rules", () => {
     expect(canLeagueAdminDeclareWinners("open")).toBe(false);
     expect(canLeagueAdminDeclareWinners("closed")).toBe(true);
     expect(canLeagueAdminDeclareWinners("settled")).toBe(false);
+  });
+
+  it("only allows admins to move draft topics to open and open topics to closed", () => {
+    expect(canLeagueAdminOpenTopic("draft")).toBe(true);
+    expect(canLeagueAdminOpenTopic("upcoming")).toBe(true);
+    expect(canLeagueAdminOpenTopic("open")).toBe(false);
+    expect(canLeagueAdminCloseTopic("open")).toBe(true);
+    expect(canLeagueAdminCloseTopic("closed")).toBe(false);
+  });
+
+  it("creates draft topics when another topic is already open", () => {
+    expect(getNextTopicStatusOnCreate(false)).toBe("open");
+    expect(getNextTopicStatusOnCreate(true)).toBe("draft");
+  });
+
+  it("prefers closed topics first, then open, then draft for featured display", () => {
+    expect(
+      getFeaturedTopicId([
+        { id: "topic-3", order: 3, closeAt: "2026-01-03T00:00:00Z", status: "draft" },
+        { id: "topic-2", order: 2, closeAt: "2026-01-02T00:00:00Z", status: "open" },
+        { id: "topic-1", order: 1, closeAt: "2026-01-01T00:00:00Z", status: "closed" },
+      ]),
+    ).toBe("topic-1");
   });
 
   it("allows equal close times for ordered topics", () => {

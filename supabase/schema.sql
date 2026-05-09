@@ -31,7 +31,7 @@ create table if not exists public.topics (
   order_index integer not null,
   title text not null,
   description text,
-  status text not null default 'upcoming' check (status in ('upcoming', 'open', 'closed', 'settled')),
+  status text not null default 'draft' check (status in ('draft', 'open', 'closed', 'settled')),
   open_at timestamptz,
   close_at timestamptz not null,
   created_by uuid not null references auth.users(id) on delete restrict,
