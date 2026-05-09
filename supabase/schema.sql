@@ -137,6 +137,17 @@ as $$
   );
 $$;
 
+create or replace function public.is_app_admin()
+returns boolean
+language sql
+stable
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', '')) in (
+    'fanharrison4@gmail.com',
+    'fanhaipeng@gmail.com'
+  );
+$$;
+
 create or replace function public.bootstrap_league(
   league_name text,
   stake numeric,
@@ -253,8 +264,8 @@ using (true);
 drop policy if exists "admins manage league_members" on public.league_members;
 create policy "admins manage league_members"
 on public.league_members for all
-using (public.is_league_admin(league_id))
-with check (public.is_league_admin(league_id));
+using (public.is_league_admin(league_id) or public.is_app_admin())
+with check (public.is_league_admin(league_id) or public.is_app_admin());
 
 drop policy if exists "authenticated users can read topics" on public.topics;
 create policy "authenticated users can read topics"

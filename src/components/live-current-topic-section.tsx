@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { isAppAdminEmail } from "@/lib/app-admins";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { League, PoolState, Prediction, Topic } from "@/lib/types";
 
@@ -20,6 +21,7 @@ interface LiveSnapshot {
     currency: string;
     playerCount: number;
     viewerRole: "admin" | "player" | null;
+    viewerIsAppAdmin: boolean;
     topicCount: number;
   };
   currentTopic: {
@@ -34,6 +36,12 @@ interface LiveSnapshot {
     text: string;
     updatedAt: string;
   } | null;
+  members: {
+    userId: string;
+    displayName: string;
+    role: "admin" | "player";
+    isCurrentUser: boolean;
+  }[];
   carryover: number;
   contribution: number;
   totalPool: number;
@@ -88,6 +96,8 @@ export function LiveCurrentTopicSection({
   const [topicDescription, setTopicDescription] = useState("");
   const [topicCloseAt, setTopicCloseAt] = useState("");
   const [topicStatus, setTopicStatus] = useState<string | null>(null);
+  const [roleStatus, setRoleStatus] = useState<string | null>(null);
+  const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
 
   const loadLiveState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) {
@@ -128,11 +138,12 @@ export function LiveCurrentTopicSection({
     }
 
     const league = leagueResult.data;
+    const viewerIsAppAdmin = isAppAdminEmail(activeSession.user.email);
 
     const [membersResult, membershipResult, topicsResult, settlementResult] = await Promise.all([
       supabase
         .from("league_members")
-        .select("id")
+        .select("user_id, role, is_active")
         .eq("league_id", league.id)
         .eq("is_active", true),
       supabase
@@ -171,6 +182,27 @@ export function LiveCurrentTopicSection({
 
     const viewerRole = membershipResult.data?.is_active ? membershipResult.data.role : null;
 
+    const memberIds = (membersResult.data ?? []).map((member) => member.user_id);
+    let memberProfiles = new Map<string, string>();
+
+    if (memberIds.length > 0) {
+      const profilesResult = await supabase
+        .from("users_profile")
+        .select("id, display_name")
+        .in("id", memberIds);
+
+      if (profilesResult.error) {
+        setError(profilesResult.error.message);
+        setSnapshot(null);
+        setLoading(false);
+        return;
+      }
+
+      memberProfiles = new Map(
+        (profilesResult.data ?? []).map((profile) => [profile.id, profile.display_name]),
+      );
+    }
+
     if (liveTopic && viewerRole) {
       const predictionResult = await supabase
         .from("predictions")
@@ -207,6 +239,7 @@ export function LiveCurrentTopicSection({
         currency: league.currency,
         playerCount,
         viewerRole,
+        viewerIsAppAdmin,
         topicCount: topicsResult.data?.length ?? 0,
       },
       currentTopic: liveTopic
@@ -218,6 +251,12 @@ export function LiveCurrentTopicSection({
             closeAt: liveTopic.close_at,
           }
         : null,
+      members: (membersResult.data ?? []).map((member) => ({
+        userId: member.user_id,
+        displayName: memberProfiles.get(member.user_id) ?? member.user_id,
+        role: member.role,
+        isCurrentUser: member.user_id === activeSession.user.id,
+      })),
       userPrediction: livePrediction,
       carryover,
       contribution,
@@ -461,6 +500,32 @@ export function LiveCurrentTopicSection({
     setCreatingTopic(false);
   }
 
+  async function handleChangeLeagueRole(userId: string, role: "admin" | "player") {
+    if (!supabase || !session || !snapshot || !snapshot.league.viewerIsAppAdmin) {
+      return;
+    }
+
+    setChangingRoleUserId(userId);
+    setRoleStatus(null);
+    setError(null);
+
+    const { error: updateError } = await supabase
+      .from("league_members")
+      .update({ role })
+      .eq("league_id", snapshot.league.id)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      setRoleStatus(updateError.message);
+      setChangingRoleUserId(null);
+      return;
+    }
+
+    await loadLiveState(session);
+    setRoleStatus(role === "admin" ? "User is now a league admin." : "User is now a player.");
+    setChangingRoleUserId(null);
+  }
+
   const usingLiveData = Boolean(session && snapshot);
   const displayLeague = snapshot
     ? {
@@ -469,6 +534,7 @@ export function LiveCurrentTopicSection({
         currency: snapshot.league.currency,
         playerCount: snapshot.league.playerCount,
         viewerRole: snapshot.league.viewerRole,
+        viewerIsAppAdmin: snapshot.league.viewerIsAppAdmin,
         topicCount: snapshot.league.topicCount,
       }
     : {
@@ -477,6 +543,7 @@ export function LiveCurrentTopicSection({
         currency: fallbackLeague.currency,
         playerCount: fallbackLeague.playerIds.length,
         viewerRole: null,
+        viewerIsAppAdmin: false,
         topicCount: 0,
       };
   const displayTopic = snapshot?.currentTopic ?? fallbackTopic;
@@ -492,6 +559,7 @@ export function LiveCurrentTopicSection({
   const isAdmin = snapshot?.league.viewerRole === "admin";
   const isMember = Boolean(snapshot?.league.viewerRole);
   const canJoinLeague = Boolean(session && snapshot && !snapshot.league.viewerRole);
+  const isAppAdmin = Boolean(snapshot?.league.viewerIsAppAdmin);
 
   return (
     <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -516,7 +584,11 @@ export function LiveCurrentTopicSection({
           <p className="text-sm text-zinc-500">League</p>
           <p className="mt-2 font-medium">{displayLeague.name}</p>
           <p className="mt-1 text-xs text-zinc-500">
-            {displayLeague.viewerRole ? `Access: ${displayLeague.viewerRole}` : "Access: viewer"}
+            {displayLeague.viewerIsAppAdmin
+              ? `Access: app admin${displayLeague.viewerRole ? ` + league ${displayLeague.viewerRole}` : ""}`
+              : displayLeague.viewerRole
+                ? `Access: league ${displayLeague.viewerRole}`
+                : "Access: viewer"}
           </p>
         </div>
         <div className="rounded-2xl bg-zinc-50 p-4">
@@ -651,6 +723,45 @@ export function LiveCurrentTopicSection({
               </button>
             </div>
           )}
+
+          {isAppAdmin ? (
+            <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+              <p className="font-medium text-zinc-900">App admin: league role management</p>
+              <p className="mt-1 text-sm text-zinc-600">Global admins can promote/demote league admins here. League admins still manage the league itself.</p>
+              <div className="mt-4 space-y-3">
+                {snapshot.members.map((member) => (
+                  <div key={member.userId} className="flex flex-col gap-3 rounded-xl bg-white p-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-medium text-zinc-900">
+                        {member.displayName}
+                        {member.isCurrentUser ? " (you)" : ""}
+                      </p>
+                      <p className="text-sm text-zinc-500">Current league role: {member.role === "admin" ? "league admin" : "player"}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleChangeLeagueRole(member.userId, "admin")}
+                        disabled={changingRoleUserId === member.userId || member.role === "admin"}
+                        className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Make league admin
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleChangeLeagueRole(member.userId, "player")}
+                        disabled={changingRoleUserId === member.userId || member.role === "player"}
+                        className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Make player
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {roleStatus ? <p className="mt-3 text-sm text-zinc-700">{roleStatus}</p> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
