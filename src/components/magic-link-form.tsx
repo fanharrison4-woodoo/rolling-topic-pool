@@ -16,6 +16,30 @@ export function MagicLinkForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+
+  async function handleGoogleSignIn() {
+    if (!supabase) {
+      setStatus("Supabase env is missing locally.");
+      return;
+    }
+
+    setGoogleSubmitting(true);
+    setStatus(null);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      setStatus(error.message);
+      setGoogleSubmitting(false);
+      return;
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,9 +72,31 @@ export function MagicLinkForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl bg-zinc-50 p-4">
       <div>
-        <p className="text-sm font-medium text-zinc-900">Magic-link sign-in</p>
+        <p className="text-sm font-medium text-zinc-900">Sign in</p>
         <p className="mt-1 text-sm text-zinc-600">
-          First-pass auth wiring for the MVP.
+          Google is the easiest path. Magic link stays here as backup.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleGoogleSignIn}
+        disabled={googleSubmitting}
+        className="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
+      >
+        {googleSubmitting ? "Redirecting to Google..." : "Continue with Google"}
+      </button>
+
+      <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-zinc-400">
+        <div className="h-px flex-1 bg-zinc-200" />
+        <span>or</span>
+        <div className="h-px flex-1 bg-zinc-200" />
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-zinc-900">Magic-link fallback</p>
+        <p className="mt-1 text-sm text-zinc-600">
+          Use this if Google auth isn’t enabled yet.
         </p>
       </div>
 
