@@ -3,6 +3,14 @@
 import { useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 
+function getFriendlyStatus(message: string) {
+  if (message.toLowerCase().includes("rate limit")) {
+    return "Too many email requests in a short time. Use the newest magic-link email you already received, or wait a bit before trying again.";
+  }
+
+  return message;
+}
+
 export function MagicLinkForm() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [email, setEmail] = useState("");
@@ -28,9 +36,9 @@ export function MagicLinkForm() {
     });
 
     if (error) {
-      setStatus(error.message);
+      setStatus(getFriendlyStatus(error.message));
     } else {
-      setStatus("Magic link sent. Check your inbox.");
+      setStatus("Magic link sent. Check your inbox, and use the newest email if you requested more than one.");
       setEmail("");
     }
 
