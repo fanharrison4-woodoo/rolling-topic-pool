@@ -20,6 +20,7 @@ interface LiveSnapshot {
     currency: string;
     playerCount: number;
     viewerRole: "admin" | "player" | null;
+    topicCount: number;
   };
   currentTopic: {
     id: string;
@@ -82,6 +83,11 @@ export function LiveCurrentTopicSection({
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [topicTitle, setTopicTitle] = useState("");
+  const [topicDescription, setTopicDescription] = useState("");
+  const [topicCloseAt, setTopicCloseAt] = useState("");
+  const [topicStatus, setTopicStatus] = useState<string | null>(null);
 
   const loadLiveState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) {
@@ -201,6 +207,7 @@ export function LiveCurrentTopicSection({
         currency: league.currency,
         playerCount,
         viewerRole,
+        topicCount: topicsResult.data?.length ?? 0,
       },
       currentTopic: liveTopic
         ? {
@@ -404,6 +411,56 @@ export function LiveCurrentTopicSection({
     setSaving(false);
   }
 
+  async function handleCreateTopic() {
+    if (!supabase || !session || !snapshot || snapshot.league.viewerRole !== "admin") {
+      return;
+    }
+
+    const nextTitle = topicTitle.trim();
+    const nextDescription = topicDescription.trim();
+
+    if (!nextTitle) {
+      setTopicStatus("Topic title is required.");
+      return;
+    }
+
+    if (!topicCloseAt) {
+      setTopicStatus("Close time is required.");
+      return;
+    }
+
+    setCreatingTopic(true);
+    setTopicStatus(null);
+    setError(null);
+
+    const nextOrder = snapshot.league.topicCount + 1;
+    const nextStatus = snapshot.currentTopic?.status === "open" ? "upcoming" : "open";
+
+    const { error: createError } = await supabase.from("topics").insert({
+      league_id: snapshot.league.id,
+      order_index: nextOrder,
+      title: nextTitle,
+      description: nextDescription || null,
+      status: nextStatus,
+      open_at: nextStatus === "open" ? new Date().toISOString() : null,
+      close_at: new Date(topicCloseAt).toISOString(),
+      created_by: session.user.id,
+    });
+
+    if (createError) {
+      setTopicStatus(createError.message);
+      setCreatingTopic(false);
+      return;
+    }
+
+    setTopicTitle("");
+    setTopicDescription("");
+    setTopicCloseAt("");
+    setTopicStatus(nextStatus === "open" ? "Topic created and opened." : "Topic created as upcoming because there is already an active open topic.");
+    await loadLiveState(session);
+    setCreatingTopic(false);
+  }
+
   const usingLiveData = Boolean(session && snapshot);
   const displayLeague = snapshot
     ? {
@@ -412,6 +469,7 @@ export function LiveCurrentTopicSection({
         currency: snapshot.league.currency,
         playerCount: snapshot.league.playerCount,
         viewerRole: snapshot.league.viewerRole,
+        topicCount: snapshot.league.topicCount,
       }
     : {
         name: fallbackLeague.name,
@@ -419,6 +477,7 @@ export function LiveCurrentTopicSection({
         currency: fallbackLeague.currency,
         playerCount: fallbackLeague.playerIds.length,
         viewerRole: null,
+        topicCount: 0,
       };
   const displayTopic = snapshot?.currentTopic ?? fallbackTopic;
   const displayPool = snapshot
@@ -523,7 +582,53 @@ export function LiveCurrentTopicSection({
           {isAdmin ? (
             <>
               <p className="font-medium text-zinc-900">Admin access</p>
-              <p className="mt-1">You’re authorized to create/edit league settings, manage topics, and judge winners. The admin UI is the next slice.</p>
+              <p className="mt-1">You’re authorized to create/edit league settings, manage topics, and judge winners.</p>
+              <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                <p className="font-medium text-zinc-900">Create topic</p>
+                <p className="mt-1 text-sm text-zinc-600">New topics are appended to this league. If an open topic already exists, the new one is created as upcoming.</p>
+                <div className="mt-4 grid gap-3">
+                  <div>
+                    <label className="text-sm font-medium text-zinc-700">Title</label>
+                    <input
+                      type="text"
+                      value={topicTitle}
+                      onChange={(event) => setTopicTitle(event.target.value)}
+                      placeholder="2027 Oscars Best Picture"
+                      className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-zinc-700">Description</label>
+                    <textarea
+                      value={topicDescription}
+                      onChange={(event) => setTopicDescription(event.target.value)}
+                      placeholder="Which film will win Best Picture?"
+                      className="mt-2 min-h-24 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-zinc-700">Close time</label>
+                    <input
+                      type="datetime-local"
+                      value={topicCloseAt}
+                      onChange={(event) => setTopicCloseAt(event.target.value)}
+                      className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCreateTopic}
+                      disabled={creatingTopic}
+                      className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {creatingTopic ? "Creating topic..." : "Create topic"}
+                    </button>
+                    <p className="text-xs text-zinc-500">Current topics: {displayLeague.topicCount}</p>
+                  </div>
+                  {topicStatus ? <p className="text-sm text-zinc-700">{topicStatus}</p> : null}
+                </div>
+              </div>
             </>
           ) : isMember ? (
             <>
