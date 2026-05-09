@@ -13,6 +13,7 @@ import {
   getTopicDisplayStatus,
   validateTopicCloseTimesByOrder,
 } from "@/lib/topic-rules";
+import { canRevealPredictionsToPlayers, computeSettlement } from "@/lib/settlement-rules";
 import type { League, PoolState, Prediction, Topic } from "@/lib/types";
 
 interface LiveCurrentTopicSectionProps {
@@ -53,6 +54,13 @@ interface LiveSnapshot {
     text: string;
     updatedAt: string;
   } | null;
+  topicPredictions: {
+    id: string;
+    userId: string;
+    predictionText: string;
+    updatedAt: string;
+    displayName: string;
+  }[];
   members: {
     userId: string;
     displayName: string;
@@ -116,6 +124,7 @@ export function LiveCurrentTopicSection({
   const [roleStatus, setRoleStatus] = useState<string | null>(null);
   const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
   const [changingTopicId, setChangingTopicId] = useState<string | null>(null);
+  const [winnerCountDraft, setWinnerCountDraft] = useState("1");
 
   const loadLiveState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) {
@@ -203,6 +212,7 @@ export function LiveCurrentTopicSection({
     const liveTopic = topicsResult.data?.find((topic) => topic.id === featuredTopicId) ?? null;
 
     let livePrediction: LiveSnapshot["userPrediction"] = null;
+    let topicPredictions: LiveSnapshot["topicPredictions"] = [];
 
     const viewerRole = membershipResult.data?.is_active ? membershipResult.data.role : null;
 
@@ -249,6 +259,29 @@ export function LiveCurrentTopicSection({
             updatedAt: predictionResult.data.updated_at,
           }
         : null;
+
+      if (canRevealPredictionsToPlayers(getTopicDisplayStatus(liveTopic.status))) {
+        const allPredictionsResult = await supabase
+          .from("predictions")
+          .select("id, user_id, prediction_text, updated_at")
+          .eq("topic_id", liveTopic.id)
+          .order("updated_at", { ascending: true });
+
+        if (allPredictionsResult.error) {
+          setError(allPredictionsResult.error.message);
+          setSnapshot(null);
+          setLoading(false);
+          return;
+        }
+
+        topicPredictions = (allPredictionsResult.data ?? []).map((entry) => ({
+          id: entry.id,
+          userId: entry.user_id,
+          predictionText: entry.prediction_text,
+          updatedAt: entry.updated_at,
+          displayName: memberProfiles.get(entry.user_id) ?? entry.user_id,
+        }));
+      }
     }
 
     const playerCount = membersResult.data?.length ?? 0;
@@ -290,6 +323,7 @@ export function LiveCurrentTopicSection({
         isCurrentUser: member.user_id === activeSession.user.id,
       })),
       userPrediction: livePrediction,
+      topicPredictions,
       carryover,
       contribution,
       totalPool: carryover + contribution,
@@ -637,6 +671,15 @@ export function LiveCurrentTopicSection({
   const isAppAdmin = Boolean(snapshot?.league.viewerIsAppAdmin);
   const canJudgeCurrentTopic = Boolean(snapshot?.currentTopic && canLeagueAdminDeclareWinners(snapshot.currentTopic.status));
   const liveTopics = snapshot?.topics ?? [];
+  const currentTopicPredictions = snapshot?.topicPredictions ?? [];
+  const settlementPreview = snapshot
+    ? computeSettlement({
+        carryoverAmount: snapshot.carryover,
+        stakeAmount: snapshot.league.stakeAmount,
+        playerCount: snapshot.league.playerCount,
+        winnerCount: Math.max(0, Number.parseInt(winnerCountDraft || "0", 10) || 0),
+      })
+    : null;
 
   return (
     <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -781,6 +824,31 @@ export function LiveCurrentTopicSection({
                   {topicStatus ? <p className="text-sm text-zinc-700">{topicStatus}</p> : null}
                 </div>
               </div>
+
+              {canJudgeCurrentTopic && settlementPreview ? (
+                <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                  <p className="font-medium text-zinc-900">Closed topic settlement preview</p>
+                  <p className="mt-1 text-sm text-zinc-600">This previews the pool result for the current closed topic before the full winner-selection flow is built.</p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-medium text-zinc-700">Winner count</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={winnerCountDraft}
+                        onChange={(event) => setWinnerCountDraft(event.target.value)}
+                        className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                      />
+                    </div>
+                    <div className="grid gap-2 text-sm text-zinc-700">
+                      <div className="rounded-xl bg-white p-3">Contribution: {formatMoney(settlementPreview.contributionAmount, displayLeague.currency)}</div>
+                      <div className="rounded-xl bg-white p-3">Total pool: {formatMoney(settlementPreview.totalPoolAmount, displayLeague.currency)}</div>
+                      <div className="rounded-xl bg-white p-3">Payout per winner: {formatMoney(settlementPreview.payoutPerWinner, displayLeague.currency)}</div>
+                      <div className="rounded-xl bg-white p-3">Next carryover: {formatMoney(settlementPreview.nextCarryoverAmount, displayLeague.currency)}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : isMember ? (
             <>
@@ -959,6 +1027,21 @@ export function LiveCurrentTopicSection({
               ? "This box is now wired for the real current topic + your real prediction row. The rest of the page is still partly mock for now."
               : "This area is still showing mock content until you’re signed in and live league data exists."}
         </div>
+
+        {currentTopicPredictions.length > 0 ? (
+          <div className="mt-4 rounded-2xl bg-white p-4">
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Visible predictions</p>
+            <div className="mt-3 space-y-3">
+              {currentTopicPredictions.map((prediction) => (
+                <div key={prediction.id} className="rounded-xl border border-zinc-200 p-3">
+                  <p className="font-medium text-zinc-900">{prediction.displayName}</p>
+                  <p className="mt-1 text-sm text-zinc-700">{prediction.predictionText}</p>
+                  <p className="mt-1 text-xs text-zinc-500">Updated {formatDate(prediction.updatedAt)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
