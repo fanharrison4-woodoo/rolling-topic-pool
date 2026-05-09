@@ -19,6 +19,7 @@ interface LiveSnapshot {
     stakeAmount: number;
     currency: string;
     playerCount: number;
+    viewerRole: "admin" | "player" | null;
   };
   currentTopic: {
     id: string;
@@ -80,6 +81,7 @@ export function LiveCurrentTopicSection({
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [joining, setJoining] = useState(false);
 
   const loadLiveState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) {
@@ -121,12 +123,18 @@ export function LiveCurrentTopicSection({
 
     const league = leagueResult.data;
 
-    const [membersResult, topicsResult, settlementResult] = await Promise.all([
+    const [membersResult, membershipResult, topicsResult, settlementResult] = await Promise.all([
       supabase
         .from("league_members")
         .select("id")
         .eq("league_id", league.id)
         .eq("is_active", true),
+      supabase
+        .from("league_members")
+        .select("role, is_active")
+        .eq("league_id", league.id)
+        .eq("user_id", activeSession.user.id)
+        .maybeSingle(),
       supabase
         .from("topics")
         .select("id, title, description, status, close_at, order_index")
@@ -140,7 +148,7 @@ export function LiveCurrentTopicSection({
         .maybeSingle(),
     ]);
 
-    const firstError = membersResult.error ?? topicsResult.error ?? settlementResult.error;
+    const firstError = membersResult.error ?? membershipResult.error ?? topicsResult.error ?? settlementResult.error;
     if (firstError) {
       setError(firstError.message);
       setSnapshot(null);
@@ -155,7 +163,9 @@ export function LiveCurrentTopicSection({
 
     let livePrediction: LiveSnapshot["userPrediction"] = null;
 
-    if (liveTopic) {
+    const viewerRole = membershipResult.data?.is_active ? membershipResult.data.role : null;
+
+    if (liveTopic && viewerRole) {
       const predictionResult = await supabase
         .from("predictions")
         .select("id, prediction_text, updated_at")
@@ -190,6 +200,7 @@ export function LiveCurrentTopicSection({
         stakeAmount,
         currency: league.currency,
         playerCount,
+        viewerRole,
       },
       currentTopic: liveTopic
         ? {
@@ -315,8 +326,38 @@ export function LiveCurrentTopicSection({
     setBootstrapping(false);
   }
 
+  async function handleJoinLeague() {
+    if (!supabase || !session || !snapshot) {
+      return;
+    }
+
+    setJoining(true);
+    setError(null);
+    setSaveStatus(null);
+
+    const { error: joinError } = await supabase.rpc("join_league", {
+      target_league: snapshot.league.id,
+    });
+
+    if (joinError) {
+      setError(joinError.message);
+      setJoining(false);
+      return;
+    }
+
+    await loadLiveState(session);
+    setSaveStatus("You joined the league. You can submit predictions now.");
+    setJoining(false);
+  }
+
   async function handleSave() {
-    if (!supabase || !session || !snapshot?.currentTopic || snapshot.currentTopic.status !== "open") {
+    if (
+      !supabase ||
+      !session ||
+      !snapshot?.currentTopic ||
+      !snapshot.league.viewerRole ||
+      snapshot.currentTopic.status !== "open"
+    ) {
       return;
     }
 
@@ -370,12 +411,14 @@ export function LiveCurrentTopicSection({
         stakePerTopic: snapshot.league.stakeAmount,
         currency: snapshot.league.currency,
         playerCount: snapshot.league.playerCount,
+        viewerRole: snapshot.league.viewerRole,
       }
     : {
         name: fallbackLeague.name,
         stakePerTopic: fallbackLeague.stakePerTopic,
         currency: fallbackLeague.currency,
         playerCount: fallbackLeague.playerIds.length,
+        viewerRole: null,
       };
   const displayTopic = snapshot?.currentTopic ?? fallbackTopic;
   const displayPool = snapshot
@@ -386,7 +429,10 @@ export function LiveCurrentTopicSection({
       }
     : fallbackPool;
   const displayPrediction = snapshot?.userPrediction ?? fallbackUserPrediction ?? null;
-  const canSaveLive = Boolean(session && snapshot?.currentTopic?.status === "open");
+  const canSaveLive = Boolean(session && snapshot?.league.viewerRole && snapshot?.currentTopic?.status === "open");
+  const isAdmin = snapshot?.league.viewerRole === "admin";
+  const isMember = Boolean(snapshot?.league.viewerRole);
+  const canJoinLeague = Boolean(session && snapshot && !snapshot.league.viewerRole);
 
   return (
     <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -410,6 +456,9 @@ export function LiveCurrentTopicSection({
         <div className="rounded-2xl bg-zinc-50 p-4">
           <p className="text-sm text-zinc-500">League</p>
           <p className="mt-2 font-medium">{displayLeague.name}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {displayLeague.viewerRole ? `Access: ${displayLeague.viewerRole}` : "Access: viewer"}
+          </p>
         </div>
         <div className="rounded-2xl bg-zinc-50 p-4">
           <p className="text-sm text-zinc-500">Players</p>
@@ -469,6 +518,37 @@ export function LiveCurrentTopicSection({
         </div>
       ) : null}
 
+      {session && snapshot ? (
+        <div className="rounded-2xl bg-white px-4 py-3 text-sm text-zinc-700">
+          {isAdmin ? (
+            <>
+              <p className="font-medium text-zinc-900">Admin access</p>
+              <p className="mt-1">You’re authorized to create/edit league settings, manage topics, and judge winners. The admin UI is the next slice.</p>
+            </>
+          ) : isMember ? (
+            <>
+              <p className="font-medium text-zinc-900">Player access</p>
+              <p className="mt-1">You’re participating in this league. You can edit only your own prediction before the topic closes.</p>
+            </>
+          ) : (
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium text-zinc-900">Not participating yet</p>
+                <p className="mt-1">Join this league to submit your own prediction. League/topic editing and winner judging stay admin-only.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleJoinLeague}
+                disabled={joining}
+                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {joining ? "Joining..." : "Participate / Join league"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5">
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Your prediction</p>
         <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -481,6 +561,8 @@ export function LiveCurrentTopicSection({
                 ? `Last updated ${formatDate(displayPrediction.updatedAt)}`
                 : canSaveLive
                   ? "You can submit or edit until the close time."
+                  : canJoinLeague
+                    ? "Join the league first, then you can submit your prediction."
                   : session
                     ? "Prediction saving unlocks when there’s an open topic in live data."
                     : "Sign in to switch this section from mock preview to live data."}
@@ -492,7 +574,13 @@ export function LiveCurrentTopicSection({
             disabled={!canSaveLive || saving}
             className="rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? "Saving..." : canSaveLive ? (displayPrediction ? "Update prediction" : "Submit prediction") : "Predictions locked"}
+            {saving
+              ? "Saving..."
+              : canSaveLive
+                ? (displayPrediction ? "Update prediction" : "Submit prediction")
+                : canJoinLeague
+                  ? "Join league to play"
+                  : "Predictions locked"}
           </button>
         </div>
 
@@ -503,7 +591,7 @@ export function LiveCurrentTopicSection({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               disabled={!canSaveLive || saving}
-              placeholder={canSaveLive ? "Type your prediction here" : "Sign in and open a live topic to edit"}
+              placeholder={canSaveLive ? "Type your prediction here" : canJoinLeague ? "Join the league to enter a prediction" : "Sign in and open a live topic to edit"}
               className="mt-2 min-h-28 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none ring-0 placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-100"
             />
           </div>
@@ -513,7 +601,7 @@ export function LiveCurrentTopicSection({
             disabled={!canSaveLive || saving}
             className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? "Saving..." : usingLiveData ? "Save to Supabase" : "Save draft mock"}
+            {saving ? "Saving..." : canSaveLive ? "Save to Supabase" : usingLiveData ? "Member action required" : "Save draft mock"}
           </button>
         </div>
 

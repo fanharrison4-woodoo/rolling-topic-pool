@@ -169,6 +169,38 @@ $$;
 
 grant execute on function public.bootstrap_league(text, numeric, text) to authenticated;
 
+create or replace function public.join_league(target_league uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  joined_league_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select id into joined_league_id
+  from public.leagues
+  where id = target_league;
+
+  if joined_league_id is null then
+    raise exception 'League not found';
+  end if;
+
+  insert into public.league_members (league_id, user_id, role, is_active)
+  values (joined_league_id, auth.uid(), 'player', true)
+  on conflict (league_id, user_id) do update
+    set is_active = true;
+
+  return joined_league_id;
+end;
+$$;
+
+grant execute on function public.join_league(uuid) to authenticated;
+
 alter table public.users_profile enable row level security;
 alter table public.leagues enable row level security;
 alter table public.league_members enable row level security;
@@ -189,10 +221,11 @@ on public.users_profile for all
 using (auth.uid() = id)
 with check (auth.uid() = id);
 
-drop policy if exists "members can read leagues" on public.leagues;
-create policy "members can read leagues"
+drop policy if exists "authenticated users can read leagues" on public.leagues;
+create policy "authenticated users can read leagues"
 on public.leagues for select
-using (public.is_league_member(id));
+to authenticated
+using (true);
 
 drop policy if exists "members can create leagues they own" on public.leagues;
 create policy "members can create leagues they own"
@@ -211,10 +244,11 @@ create policy "admins delete leagues"
 on public.leagues for delete
 using (public.is_league_admin(id));
 
-drop policy if exists "members can read league_members" on public.league_members;
-create policy "members can read league_members"
+drop policy if exists "authenticated users can read league_members" on public.league_members;
+create policy "authenticated users can read league_members"
 on public.league_members for select
-using (public.is_league_member(league_id));
+to authenticated
+using (true);
 
 drop policy if exists "admins manage league_members" on public.league_members;
 create policy "admins manage league_members"
@@ -222,10 +256,11 @@ on public.league_members for all
 using (public.is_league_admin(league_id))
 with check (public.is_league_admin(league_id));
 
-drop policy if exists "members can read topics" on public.topics;
-create policy "members can read topics"
+drop policy if exists "authenticated users can read topics" on public.topics;
+create policy "authenticated users can read topics"
 on public.topics for select
-using (public.is_league_member(league_id));
+to authenticated
+using (true);
 
 drop policy if exists "admins manage topics" on public.topics;
 create policy "admins manage topics"
@@ -273,17 +308,11 @@ with check (
   )
 );
 
-drop policy if exists "members can read settlements" on public.settlements;
-create policy "members can read settlements"
+drop policy if exists "authenticated users can read settlements" on public.settlements;
+create policy "authenticated users can read settlements"
 on public.settlements for select
-using (
-  exists (
-    select 1
-    from public.topics t
-    where t.id = topic_id
-      and public.is_league_member(t.league_id)
-  )
-);
+to authenticated
+using (true);
 
 drop policy if exists "admins manage settlements" on public.settlements;
 create policy "admins manage settlements"
@@ -305,18 +334,11 @@ with check (
   )
 );
 
-drop policy if exists "members can read winner rows" on public.settlement_winners;
-create policy "members can read winner rows"
+drop policy if exists "authenticated users can read winner rows" on public.settlement_winners;
+create policy "authenticated users can read winner rows"
 on public.settlement_winners for select
-using (
-  exists (
-    select 1
-    from public.settlements s
-    join public.topics t on t.id = s.topic_id
-    where s.id = settlement_id
-      and public.is_league_member(t.league_id)
-  )
-);
+to authenticated
+using (true);
 
 drop policy if exists "admins manage winner rows" on public.settlement_winners;
 create policy "admins manage winner rows"
@@ -340,17 +362,11 @@ with check (
   )
 );
 
-drop policy if exists "members can read announcement logs" on public.announcement_logs;
-create policy "members can read announcement logs"
+drop policy if exists "authenticated users can read announcement logs" on public.announcement_logs;
+create policy "authenticated users can read announcement logs"
 on public.announcement_logs for select
-using (
-  exists (
-    select 1
-    from public.topics t
-    where t.id = topic_id
-      and public.is_league_member(t.league_id)
-  )
-);
+to authenticated
+using (true);
 
 drop policy if exists "admins manage announcement logs" on public.announcement_logs;
 create policy "admins manage announcement logs"
