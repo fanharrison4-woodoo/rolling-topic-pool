@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { League, PoolState, Prediction, Topic } from "@/lib/types";
@@ -79,168 +79,158 @@ export function LiveCurrentTopicSection({
   const [draft, setDraft] = useState(fallbackUserPrediction?.text ?? "");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(false);
+
+  const loadLiveState = useCallback(async (activeSession: Session | null) => {
+    if (!supabase) {
+      return;
+    }
+
+    setSession(activeSession);
+    setSaveStatus(null);
+
+    if (!activeSession) {
+      setSnapshot(null);
+      setDraft(fallbackUserPrediction?.text ?? "");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const leagueResult = await supabase
+      .from("leagues")
+      .select("id, name, stake_amount, currency")
+      .limit(1)
+      .maybeSingle();
+
+    if (leagueResult.error) {
+      setError(leagueResult.error.message);
+      setSnapshot(null);
+      setLoading(false);
+      return;
+    }
+
+    if (!leagueResult.data) {
+      setSnapshot(null);
+      setDraft("");
+      setLoading(false);
+      return;
+    }
+
+    const league = leagueResult.data;
+
+    const [membersResult, topicsResult, settlementResult] = await Promise.all([
+      supabase
+        .from("league_members")
+        .select("id")
+        .eq("league_id", league.id)
+        .eq("is_active", true),
+      supabase
+        .from("topics")
+        .select("id, title, description, status, close_at, order_index")
+        .eq("league_id", league.id)
+        .order("order_index", { ascending: true }),
+      supabase
+        .from("settlements")
+        .select("next_pool_amount, settled_at")
+        .order("settled_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const firstError = membersResult.error ?? topicsResult.error ?? settlementResult.error;
+    if (firstError) {
+      setError(firstError.message);
+      setSnapshot(null);
+      setLoading(false);
+      return;
+    }
+
+    const liveTopic =
+      topicsResult.data?.find((topic) => topic.status === "open") ??
+      topicsResult.data?.find((topic) => topic.status === "closed") ??
+      null;
+
+    let livePrediction: LiveSnapshot["userPrediction"] = null;
+
+    if (liveTopic) {
+      const predictionResult = await supabase
+        .from("predictions")
+        .select("id, prediction_text, updated_at")
+        .eq("topic_id", liveTopic.id)
+        .eq("user_id", activeSession.user.id)
+        .maybeSingle();
+
+      if (predictionResult.error) {
+        setError(predictionResult.error.message);
+        setSnapshot(null);
+        setLoading(false);
+        return;
+      }
+
+      livePrediction = predictionResult.data
+        ? {
+            id: predictionResult.data.id,
+            text: predictionResult.data.prediction_text,
+            updatedAt: predictionResult.data.updated_at,
+          }
+        : null;
+    }
+
+    const playerCount = membersResult.data?.length ?? 0;
+    const stakeAmount = Number(league.stake_amount ?? 0);
+    const carryover = Number(settlementResult.data?.next_pool_amount ?? 0);
+    const contribution = stakeAmount * playerCount;
+    const nextSnapshot: LiveSnapshot = {
+      league: {
+        id: league.id,
+        name: league.name,
+        stakeAmount,
+        currency: league.currency,
+        playerCount,
+      },
+      currentTopic: liveTopic
+        ? {
+            id: liveTopic.id,
+            title: liveTopic.title,
+            description: liveTopic.description ?? "",
+            status: liveTopic.status,
+            closeAt: liveTopic.close_at,
+          }
+        : null,
+      userPrediction: livePrediction,
+      carryover,
+      contribution,
+      totalPool: carryover + contribution,
+    };
+
+    setSnapshot(nextSnapshot);
+    setDraft(livePrediction?.text ?? "");
+    setLoading(false);
+  }, [fallbackUserPrediction?.text, supabase]);
 
   useEffect(() => {
     if (!supabase) {
       return;
     }
 
-    const client = supabase;
     let isMounted = true;
 
-    async function loadLiveState(activeSession: Session | null) {
+    supabase.auth.getSession().then(({ data }) => {
       if (!isMounted) {
         return;
       }
-
-      setSession(activeSession);
-      setSaveStatus(null);
-
-      if (!activeSession) {
-        setSnapshot(null);
-        setDraft(fallbackUserPrediction?.text ?? "");
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      const leagueResult = await client
-        .from("leagues")
-        .select("id, name, stake_amount, currency")
-        .limit(1)
-        .maybeSingle();
-
-      if (leagueResult.error) {
-        if (!isMounted) {
-          return;
-        }
-        setError(leagueResult.error.message);
-        setSnapshot(null);
-        setLoading(false);
-        return;
-      }
-
-      if (!leagueResult.data) {
-        if (!isMounted) {
-          return;
-        }
-        setSnapshot(null);
-        setDraft("");
-        setLoading(false);
-        return;
-      }
-
-      const league = leagueResult.data;
-
-      const [membersResult, topicsResult, settlementResult] = await Promise.all([
-        client
-          .from("league_members")
-          .select("id")
-          .eq("league_id", league.id)
-          .eq("is_active", true),
-        client
-          .from("topics")
-          .select("id, title, description, status, close_at, order_index")
-          .eq("league_id", league.id)
-          .order("order_index", { ascending: true }),
-        client
-          .from("settlements")
-          .select("next_pool_amount, settled_at")
-          .order("settled_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      const firstError = membersResult.error ?? topicsResult.error ?? settlementResult.error;
-      if (firstError) {
-        if (!isMounted) {
-          return;
-        }
-        setError(firstError.message);
-        setSnapshot(null);
-        setLoading(false);
-        return;
-      }
-
-      const liveTopic =
-        topicsResult.data?.find((topic) => topic.status === "open") ??
-        topicsResult.data?.find((topic) => topic.status === "closed") ??
-        null;
-
-      let livePrediction: LiveSnapshot["userPrediction"] = null;
-
-      if (liveTopic) {
-        const predictionResult = await client
-          .from("predictions")
-          .select("id, prediction_text, updated_at")
-          .eq("topic_id", liveTopic.id)
-          .eq("user_id", activeSession.user.id)
-          .maybeSingle();
-
-        if (predictionResult.error) {
-          if (!isMounted) {
-            return;
-          }
-          setError(predictionResult.error.message);
-          setSnapshot(null);
-          setLoading(false);
-          return;
-        }
-
-        livePrediction = predictionResult.data
-          ? {
-              id: predictionResult.data.id,
-              text: predictionResult.data.prediction_text,
-              updatedAt: predictionResult.data.updated_at,
-            }
-          : null;
-      }
-
-      const playerCount = membersResult.data?.length ?? 0;
-      const stakeAmount = Number(league.stake_amount ?? 0);
-      const carryover = Number(settlementResult.data?.next_pool_amount ?? 0);
-      const contribution = stakeAmount * playerCount;
-      const nextSnapshot: LiveSnapshot = {
-        league: {
-          id: league.id,
-          name: league.name,
-          stakeAmount,
-          currency: league.currency,
-          playerCount,
-        },
-        currentTopic: liveTopic
-          ? {
-              id: liveTopic.id,
-              title: liveTopic.title,
-              description: liveTopic.description ?? "",
-              status: liveTopic.status,
-              closeAt: liveTopic.close_at,
-            }
-          : null,
-        userPrediction: livePrediction,
-        carryover,
-        contribution,
-        totalPool: carryover + contribution,
-      };
-
-      if (!isMounted) {
-        return;
-      }
-
-      setSnapshot(nextSnapshot);
-      setDraft(livePrediction?.text ?? "");
-      setLoading(false);
-    }
-
-    client.auth.getSession().then(({ data }) => {
       void loadLiveState(data.session ?? null);
     });
 
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) {
+        return;
+      }
       void loadLiveState(nextSession ?? null);
     });
 
@@ -248,7 +238,82 @@ export function LiveCurrentTopicSection({
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [fallbackUserPrediction?.text, supabase]);
+  }, [loadLiveState, supabase]);
+
+  async function handleBootstrap() {
+    if (!supabase || !session) {
+      return;
+    }
+
+    setBootstrapping(true);
+    setError(null);
+    setSaveStatus(null);
+
+    const { data: existingLeague, error: existingLeagueError } = await supabase
+      .from("leagues")
+      .select("id, name")
+      .limit(1)
+      .maybeSingle();
+
+    if (existingLeagueError) {
+      setError(existingLeagueError.message);
+      setBootstrapping(false);
+      return;
+    }
+
+    let leagueId = existingLeague?.id ?? null;
+
+    if (!leagueId) {
+      const { data: bootstrappedLeagueId, error: bootstrapError } = await supabase.rpc("bootstrap_league", {
+        league_name: fallbackLeague.name,
+        stake: fallbackLeague.stakePerTopic,
+        league_currency: fallbackLeague.currency,
+      });
+
+      if (bootstrapError) {
+        setError(bootstrapError.message);
+        setBootstrapping(false);
+        return;
+      }
+
+      leagueId = bootstrappedLeagueId;
+    }
+
+    const { data: existingTopics, error: topicLookupError } = await supabase
+      .from("topics")
+      .select("id")
+      .eq("league_id", leagueId)
+      .limit(1);
+
+    if (topicLookupError) {
+      setError(topicLookupError.message);
+      setBootstrapping(false);
+      return;
+    }
+
+    if (!existingTopics || existingTopics.length === 0) {
+      const { error: topicInsertError } = await supabase.from("topics").insert({
+        league_id: leagueId,
+        order_index: 1,
+        title: fallbackTopic.title,
+        description: fallbackTopic.description,
+        status: "open",
+        open_at: new Date().toISOString(),
+        close_at: fallbackTopic.closeAt,
+        created_by: session.user.id,
+      });
+
+      if (topicInsertError) {
+        setError(topicInsertError.message);
+        setBootstrapping(false);
+        return;
+      }
+    }
+
+    await loadLiveState(session);
+    setSaveStatus("Starter league and topic are ready.");
+    setBootstrapping(false);
+  }
 
   async function handleSave() {
     if (!supabase || !session || !snapshot?.currentTopic || snapshot.currentTopic.status !== "open") {
@@ -381,9 +446,26 @@ export function LiveCurrentTopicSection({
         </div>
       ) : session && !snapshot ? (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm text-zinc-700">
-          {error
-            ? `Couldn’t load live data yet: ${error}`
-            : "You’re signed in, but this account doesn’t see a league/topic in Supabase yet. The homepage is still falling back to the mock preview below."}
+          <p>
+            {error
+              ? `Couldn’t load live data yet: ${error}`
+              : "You’re signed in, but this account doesn’t see a league/topic in Supabase yet. The homepage is still falling back to the mock preview below."}
+          </p>
+          {!error ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleBootstrap}
+                disabled={bootstrapping}
+                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {bootstrapping ? "Creating starter data..." : "Create starter league + topic"}
+              </button>
+              <p className="text-xs text-zinc-500">
+                This will create your first league, make you admin, and open one starter topic so the real flow works.
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
