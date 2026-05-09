@@ -75,17 +75,23 @@ Cannot:
 
 ## Concrete v1 decisions
 
-### 1. A league can have many topics, but only **one open topic at a time**
+### 1. A league can have **multiple open topics at the same time**
 Reason:
-- keeps the product simple
-- makes the active round obvious
-- keeps pool math straightforward
+- some real-world events happen at the same time
+- a World Cup round may have multiple matches with the same open/close window
+- we still need a topic order so pool carryover can be applied deterministically
 
 Rule:
-- there may be many `upcoming` topics
+- there may be many `draft` topics
+- there may be many `open` topics
+- there may be many `closed` topics waiting for judgment
 - there may be many `settled` topics
-- there may be at most one `open` topic
-- there may be at most one `closed` topic waiting for judgment if we keep transitions tidy
+- topics still have a strict order inside the league
+
+Important:
+- topic order is the source of truth for carryover sequencing
+- open/close times may be equal across multiple topics
+- settlement must still respect topic order when carryover is calculated
 
 ### 2. Signed-in users can see league/topic info before joining
 Reason:
@@ -128,22 +134,56 @@ Rule:
 Note:
 - admins may still need visibility for moderation/debugging, but normal player-facing UX should hide open predictions from others
 
-### 6. Topic editing should be restricted once predictions exist
+### 6. Topics use these statuses in v1: `draft`, `open`, `closed`, `settled`
+
+#### Draft
+League admin can:
+- create the topic
+- edit the topic freely
+- adjust title, description, close time, and order
+
+Players:
+- do not submit predictions yet
+
+#### Open
+League admin:
+- cannot edit the topic anymore
+- cannot change the meaning or timing
+
+Players:
+- can submit one prediction
+- can edit only their own prediction before close time
+- can view only their own prediction
+
+#### Closed
+League admin:
+- can review all predictions
+- can declare winners
+- can move the league forward to the next topic(s)
+
+Players:
+- cannot edit predictions
+- can view all predictions for that topic
+
+#### Settled
+- winners and pool outcome are finalized
+- topic becomes immutable history for normal workflow purposes
+
+### 7. Topic close time must align with topic order
 Reason:
-- avoids changing the game after people already committed
+- carryover is applied by ordered topic sequence
+- if topic order and close timing disagree, league progression becomes ambiguous
 
 Rule:
-- league admin can freely edit a topic before predictions exist
-- after predictions exist, only minor edits should be allowed in principle
-- in v1, simplest rule is:
-  - if any prediction exists, editing the meaning-critical fields should be blocked
+- topic close times must be non-decreasing with topic order
+- later topics cannot close before earlier topics
+- equal close times are allowed
+- equal close times are the mechanism that supports simultaneous events
 
-Meaning-critical fields:
-- title
-- description/question
-- close time
+Validation requirement:
+- when creating or editing a topic, the app should reject any topic whose close time conflicts with its position in the league order
 
-### 7. Settlement should require an explicit admin action
+### 8. Settlement should require an explicit admin action
 Reason:
 - avoid accidental winner selection
 - keep audit trail clean
@@ -159,26 +199,31 @@ Rule:
 
 ## Topic lifecycle in v1
 
-### 1. Topic is created
-League admin creates a topic.
+### 1. Topic is created as draft
+League admin creates a topic in `draft`.
 
-Possible initial states:
-- `upcoming` if another topic is already open
-- `open` if there is no active open topic
+In draft:
+- league admin can edit freely
+- topic is not yet accepting predictions
 
-### 2. Topic is open
-Players can:
-- view the prompt
-- submit one prediction
-- edit their own prediction until close time
+### 2. Topic is opened
+League admin changes the topic to `open`.
 
-Players cannot:
-- see other players’ predictions yet
+In open:
+- players can submit one prediction
+- players can edit only their own prediction until close time
+- players cannot see other players’ predictions
+- league admin can no longer edit the topic
+
+Note:
+- multiple topics may be open at the same time
+- topic order still defines carryover sequencing
 
 ### 3. Topic closes
 At close time:
 - predictions lock
 - no more edits allowed
+- all predictions become visible to players
 - topic becomes `closed`
 
 ### 4. Topic is judged
@@ -187,16 +232,17 @@ League admin:
 - writes resolution note
 - selects winner(s)
 - confirms settlement
+- moves the league forward
 
 ### 5. Topic is settled
 After settlement:
-- all predictions are visible
 - winners are visible
 - payout or rollover is visible
 - topic becomes part of league history
 
-### 6. Next topic becomes active
-League admin opens or prepares the next topic.
+### 6. Next topic(s) continue the league
+The league continues in topic order.
+If multiple topics are already open, they proceed independently on timing but pool carryover still follows topic order.
 
 ---
 
@@ -209,14 +255,15 @@ League admin opens or prepares the next topic.
 4. Create first topic
 
 ### Ongoing cycle
-1. Keep exactly one active open topic
-2. Create future topics as upcoming
-3. Monitor submissions
-4. Wait for close time
-5. Judge the closed topic
-6. Confirm winners and settlement
-7. Move the league to the next topic
-8. Repeat
+1. Create draft topics in order
+2. Validate that close times align with topic order
+3. Open one or more topics when appropriate
+4. Monitor submissions
+5. Wait for close time
+6. Judge closed topics
+7. Confirm winners and settlement in topic order
+8. Move the league forward
+9. Repeat
 
 ### Admin guardrails
 League admin should not:
@@ -231,13 +278,14 @@ League admin should not:
 1. Sign in
 2. View league
 3. Join / participate
-4. Open active topic
-5. Submit prediction
-6. Edit prediction before close if needed
+4. View currently open topic(s)
+5. Submit prediction for any open topic
+6. Edit own prediction before close if needed
 7. Wait for close
-8. Review settled result
-9. See payout or rollover
-10. Return for next topic
+8. Review all predictions once closed
+9. Review settled result
+10. See payout or rollover
+11. Return for next topic(s)
 
 ---
 
@@ -246,7 +294,7 @@ League admin should not:
 ### Signed-in viewer, not joined
 Can see:
 - league name
-- active topic
+- open/closed topic shell
 - topic history shell
 - join button
 
@@ -263,6 +311,10 @@ Can see:
 
 Cannot see:
 - other players’ open predictions
+
+### Everyone after topic is closed
+Can see:
+- all predictions for that topic
 
 ### Everyone after topic is settled
 Can see:
@@ -295,7 +347,8 @@ If there are no winners:
 - one league has many topics
 - one topic belongs to one league
 - one player has at most one prediction per topic
-- one league has at most one open topic at a time
+- one league may have multiple open topics at a time
+- topic close times must be non-decreasing with topic order
 
 ### Permission rules
 - app admin manages league roles
@@ -314,12 +367,14 @@ If there are no winners:
 1. reliable sign-in
 2. join league
 3. create topic as league admin
-4. hide others’ predictions while open
-5. submit/edit own prediction
-6. auto-lock at close time
-7. admin settlement flow
-8. reveal predictions + payout math after settlement
-9. topic editing restrictions after submissions exist
+4. support topic draft/open/closed/settled lifecycle
+5. validate close-time alignment with topic order
+6. hide others’ predictions while open
+7. submit/edit own prediction
+8. auto-lock at close time
+9. reveal predictions when closed
+10. admin settlement flow
+11. payout math by topic order
 
 ---
 
@@ -329,13 +384,14 @@ These are the highest-value product choices to confirm:
 1. **Hide other players’ predictions while topic is open**
    - current proposal: yes
 
-2. **Exactly one open topic at a time**
+2. **Allow multiple open topics at the same time**
    - current proposal: yes
+   - with carryover still applied by topic order
 
 3. **Open joining in v1**
    - current proposal: yes
 
-4. **Block topic edits after any prediction exists**
+4. **Open topics are not editable by league admin**
    - current proposal: yes
 
 5. **Require explicit admin settlement confirmation**
