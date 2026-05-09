@@ -8,7 +8,8 @@ import {
   getPredictionsForTopic,
   getUserPrediction,
 } from "@/lib/mock-data";
-import { MagicLinkForm } from "@/components/magic-link-form";
+import { AuthStatusCard } from "@/components/auth-status-card";
+import { PredictionAuthHint } from "@/components/prediction-auth-hint";
 import { getSupabasePublicEnv } from "@/lib/env";
 import { Prediction, Topic } from "@/lib/types";
 
@@ -196,36 +197,12 @@ export default function Home() {
                   Save draft mock
                 </button>
               </div>
+              <PredictionAuthHint />
             </div>
           </div>
 
           <aside className="space-y-6">
-            <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Backend status</p>
-              <div className="mt-4 space-y-3 text-sm text-zinc-700">
-                <div className="rounded-2xl bg-zinc-50 p-4">
-                  <p className="text-zinc-500">Supabase project</p>
-                  <p className="mt-1 font-medium text-zinc-900">
-                    {supabase.projectHost ?? "Not configured yet"}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-zinc-50 p-4">
-                  <p className="text-zinc-500">Public client env</p>
-                  <p className="mt-1 font-medium text-zinc-900">
-                    {supabase.configured ? "Configured locally" : "Missing"}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-zinc-50 p-4">
-                  <p className="text-zinc-500">Next backend step</p>
-                  <p className="mt-1 text-zinc-700">
-                    Run the SQL in <code className="rounded bg-white px-1 py-0.5 text-xs">supabase/schema.sql</code>, then enable magic-link auth.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4">
-                <MagicLinkForm />
-              </div>
-            </div>
+            <AuthStatusCard projectHost={supabase.projectHost} configured={supabase.configured} />
             <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
               <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Admin settlement flow</p>
               <ol className="mt-4 space-y-3 text-sm text-zinc-700">
