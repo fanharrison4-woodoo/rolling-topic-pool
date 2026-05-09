@@ -12,7 +12,14 @@ export function createSupabaseBrowserClient() {
   }
 
   if (!browserClient) {
-    browserClient = createClient(url, anonKey);
+    browserClient = createClient(url, anonKey, {
+      auth: {
+        flowType: "pkce",
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    });
   }
 
   return browserClient;
