@@ -11,6 +11,7 @@ import {
 import { AuthStatusCard } from "@/components/auth-status-card";
 import { LiveCurrentTopicSection } from "@/components/live-current-topic-section";
 import { getSupabasePublicEnv } from "@/lib/env";
+import { getTopicDisplayStatus } from "@/lib/topic-rules";
 import { Prediction, Topic } from "@/lib/types";
 
 function formatDate(value: string) {
@@ -29,7 +30,7 @@ function formatMoney(amount: number, currency: string) {
 }
 
 function statusTone(status: Topic["status"]) {
-  switch (status) {
+  switch (getTopicDisplayStatus(status)) {
     case "open":
       return "bg-emerald-100 text-emerald-800";
     case "closed":
@@ -200,7 +201,7 @@ export default function Home() {
                     <div className="flex flex-wrap items-center gap-3">
                       <h4 className="text-lg font-semibold text-zinc-900">{topic.title}</h4>
                       <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(topic.status)}`}>
-                        {topic.status}
+                        {getTopicDisplayStatus(topic.status)}
                       </span>
                     </div>
                     <p className="mt-1 text-zinc-600">{topic.description}</p>
@@ -209,11 +210,11 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-                    {topic.status === "settled"
+                    {getTopicDisplayStatus(topic.status) === "settled"
                       ? `${topic.winnerIds?.length ? `${topic.winnerIds.length} winner(s)` : "Rolled over"} · Pool ${formatMoney(topic.poolAtSettlement ?? 0, LEAGUE.currency)}`
-                      : topic.status === "open"
+                      : getTopicDisplayStatus(topic.status) === "open"
                         ? "Open for edits"
-                        : topic.status === "closed"
+                        : getTopicDisplayStatus(topic.status) === "closed"
                           ? "Awaiting admin resolution"
                           : "Not live yet"}
                   </div>

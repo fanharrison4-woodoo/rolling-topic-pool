@@ -1,15 +1,30 @@
 import type { TopicStatus } from "./types";
 
-export function canLeagueAdminEditTopic(status: TopicStatus | "draft") {
-  return status === "draft";
+export type WorkflowTopicStatus = "draft" | "open" | "closed" | "settled";
+
+export function normalizeTopicStatus(status: TopicStatus): WorkflowTopicStatus {
+  return status === "upcoming" ? "draft" : status;
 }
 
-export function canPlayerSubmitPrediction(status: TopicStatus | "draft") {
-  return status === "open";
+export function getTopicDisplayStatus(status: TopicStatus): WorkflowTopicStatus {
+  return normalizeTopicStatus(status);
 }
 
-export function canPlayersViewAllPredictions(status: TopicStatus | "draft") {
-  return status === "closed" || status === "settled";
+export function canLeagueAdminEditTopic(status: TopicStatus) {
+  return normalizeTopicStatus(status) === "draft";
+}
+
+export function canPlayerSubmitPrediction(status: TopicStatus) {
+  return normalizeTopicStatus(status) === "open";
+}
+
+export function canPlayersViewAllPredictions(status: TopicStatus) {
+  const normalizedStatus = normalizeTopicStatus(status);
+  return normalizedStatus === "closed" || normalizedStatus === "settled";
+}
+
+export function canLeagueAdminDeclareWinners(status: TopicStatus) {
+  return normalizeTopicStatus(status) === "closed";
 }
 
 export interface OrderedTopicCloseTime {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isAppAdminEmail } from "@/lib/app-admins";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
+import { canLeagueAdminDeclareWinners, getTopicDisplayStatus } from "@/lib/topic-rules";
 import type { League, PoolState, Prediction, Topic } from "@/lib/types";
 
 interface LiveCurrentTopicSectionProps {
@@ -63,7 +64,7 @@ function formatMoney(amount: number, currency: string) {
 }
 
 function statusTone(status: Topic["status"]) {
-  switch (status) {
+  switch (getTopicDisplayStatus(status)) {
     case "open":
       return "bg-emerald-100 text-emerald-800";
     case "closed":
@@ -495,7 +496,7 @@ export function LiveCurrentTopicSection({
     setTopicTitle("");
     setTopicDescription("");
     setTopicCloseAt("");
-    setTopicStatus(nextStatus === "open" ? "Topic created and opened." : "Topic created as upcoming because there is already an active open topic.");
+    setTopicStatus(nextStatus === "open" ? "Topic created and opened." : "Topic created as draft because there is already an active open topic.");
     await loadLiveState(session);
     setCreatingTopic(false);
   }
@@ -560,6 +561,7 @@ export function LiveCurrentTopicSection({
   const isMember = Boolean(snapshot?.league.viewerRole);
   const canJoinLeague = Boolean(session && snapshot && !snapshot.league.viewerRole);
   const isAppAdmin = Boolean(snapshot?.league.viewerIsAppAdmin);
+  const canJudgeCurrentTopic = Boolean(snapshot?.currentTopic && canLeagueAdminDeclareWinners(snapshot.currentTopic.status));
 
   return (
     <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -575,7 +577,7 @@ export function LiveCurrentTopicSection({
           <p className="mt-2 max-w-2xl text-zinc-600">{displayTopic.description}</p>
         </div>
         <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusTone(displayTopic.status)}`}>
-          {displayTopic.status}
+          {getTopicDisplayStatus(displayTopic.status)}
         </span>
       </div>
 
@@ -657,7 +659,10 @@ export function LiveCurrentTopicSection({
               <p className="mt-1">You’re authorized to create/edit league settings, manage topics, and judge winners.</p>
               <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
                 <p className="font-medium text-zinc-900">Create topic</p>
-                <p className="mt-1 text-sm text-zinc-600">New topics are appended to this league. If an open topic already exists, the new one is created as upcoming.</p>
+                <p className="mt-1 text-sm text-zinc-600">New topics are appended to this league. If an open topic already exists, the new one is created as draft.</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {canJudgeCurrentTopic ? "The current topic is closed, so this is also the phase where league admins can declare winners." : "League admins can declare winners once a topic reaches the closed state."}
+                </p>
                 <div className="mt-4 grid gap-3">
                   <div>
                     <label className="text-sm font-medium text-zinc-700">Title</label>

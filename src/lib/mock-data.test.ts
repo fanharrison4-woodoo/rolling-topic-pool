@@ -6,7 +6,7 @@ describe("mock-data pool helpers", () => {
     expect(computePool()).toEqual({ rolledOver: 0, topicCount: 0 });
   });
 
-  it("computes the active pool for the open topic", () => {
+  it("computes the active pool for the open topic even when later topics are still drafts", () => {
     expect(getActivePool(LEAGUE)).toEqual({
       currentTopicId: "topic-5",
       accumulatedPool: 0,

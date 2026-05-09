@@ -7,7 +7,7 @@ export interface Player {
   role: Role;
 }
 
-export type TopicStatus = "upcoming" | "open" | "closed" | "settled";
+export type TopicStatus = "draft" | "upcoming" | "open" | "closed" | "settled";
 
 export interface Topic {
   id: string;

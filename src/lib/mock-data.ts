@@ -85,7 +85,7 @@ export const TOPICS: Topic[] = [
     order: 6,
     title: "First AI to pass bar exam universally",
     description: "Which AI system will be the first to be officially recognized as passing the bar exam in a US state?",
-    status: "upcoming",
+    status: "draft",
     openAt:  "2026-07-20T00:00:00Z",
     closeAt: "2027-01-01T00:00:00Z",
   },
