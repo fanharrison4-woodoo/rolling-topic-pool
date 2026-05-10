@@ -48,6 +48,14 @@ interface LiveSnapshot {
     description: string;
     status: Topic["status"];
     closeAt: string;
+    settlement: {
+      settledAt: string;
+      winnerCount: number;
+      payoutPerWinner: number;
+      nextPoolAmount: number;
+      resolutionNote: string | null;
+      winnerNames: string[];
+    } | null;
   }[];
   userPrediction: {
     id: string;
@@ -61,6 +69,14 @@ interface LiveSnapshot {
     updatedAt: string;
     displayName: string;
   }[];
+  currentTopicSettlement: {
+    settledAt: string;
+    winnerCount: number;
+    payoutPerWinner: number;
+    nextPoolAmount: number;
+    resolutionNote: string | null;
+    winnerNames: string[];
+  } | null;
   members: {
     userId: string;
     displayName: string;
@@ -215,6 +231,7 @@ export function LiveCurrentTopicSection({
 
     let livePrediction: LiveSnapshot["userPrediction"] = null;
     let topicPredictions: LiveSnapshot["topicPredictions"] = [];
+    let currentTopicSettlement: LiveSnapshot["currentTopicSettlement"] = null;
 
     const viewerRole = membershipResult.data?.is_active ? membershipResult.data.role : null;
 
@@ -237,6 +254,65 @@ export function LiveCurrentTopicSection({
       memberProfiles = new Map(
         (profilesResult.data ?? []).map((profile) => [profile.id, profile.display_name]),
       );
+    }
+
+    const topicIds = (topicsResult.data ?? []).map((topic) => topic.id);
+    let settlementByTopicId = new Map<string, NonNullable<LiveSnapshot["currentTopicSettlement"]>>();
+
+    if (topicIds.length > 0) {
+      const settlementsForTopicsResult = await supabase
+        .from("settlements")
+        .select("id, topic_id, winner_count, payout_per_winner, next_pool_amount, resolution_note, settled_at")
+        .in("topic_id", topicIds);
+
+      if (settlementsForTopicsResult.error) {
+        setError(settlementsForTopicsResult.error.message);
+        setSnapshot(null);
+        setLoading(false);
+        return;
+      }
+
+      const settlementRows = settlementsForTopicsResult.data ?? [];
+      const settlementIds = settlementRows.map((row) => row.id);
+      const winnerNamesBySettlementId = new Map<string, string[]>();
+
+      if (settlementIds.length > 0) {
+        const winnerRowsResult = await supabase
+          .from("settlement_winners")
+          .select("settlement_id, user_id")
+          .in("settlement_id", settlementIds);
+
+        if (winnerRowsResult.error) {
+          setError(winnerRowsResult.error.message);
+          setSnapshot(null);
+          setLoading(false);
+          return;
+        }
+
+        for (const winnerRow of winnerRowsResult.data ?? []) {
+          const current = winnerNamesBySettlementId.get(winnerRow.settlement_id) ?? [];
+          current.push(memberProfiles.get(winnerRow.user_id) ?? winnerRow.user_id);
+          winnerNamesBySettlementId.set(winnerRow.settlement_id, current);
+        }
+      }
+
+      settlementByTopicId = new Map(
+        settlementRows.map((row) => [
+          row.topic_id,
+          {
+            settledAt: row.settled_at,
+            winnerCount: row.winner_count,
+            payoutPerWinner: Number(row.payout_per_winner ?? 0),
+            nextPoolAmount: Number(row.next_pool_amount ?? 0),
+            resolutionNote: row.resolution_note,
+            winnerNames: winnerNamesBySettlementId.get(row.id) ?? [],
+          },
+        ]),
+      );
+    }
+
+    if (liveTopic) {
+      currentTopicSettlement = settlementByTopicId.get(liveTopic.id) ?? null;
     }
 
     if (liveTopic && viewerRole) {
@@ -317,6 +393,7 @@ export function LiveCurrentTopicSection({
         description: topic.description ?? "",
         status: topic.status,
         closeAt: topic.close_at,
+        settlement: settlementByTopicId.get(topic.id) ?? null,
       })),
       members: (membersResult.data ?? []).map((member) => ({
         userId: member.user_id,
@@ -326,6 +403,7 @@ export function LiveCurrentTopicSection({
       })),
       userPrediction: livePrediction,
       topicPredictions,
+      currentTopicSettlement,
       carryover,
       contribution,
       totalPool: carryover + contribution,
@@ -760,6 +838,7 @@ export function LiveCurrentTopicSection({
   const canJudgeCurrentTopic = Boolean(snapshot?.currentTopic && canLeagueAdminDeclareWinners(snapshot.currentTopic.status));
   const liveTopics = snapshot?.topics ?? [];
   const currentTopicPredictions = snapshot?.topicPredictions ?? [];
+  const currentTopicSettlement = snapshot?.currentTopicSettlement ?? null;
   const selectedWinnerCount = selectedWinnerUserIds.length;
   const settlementPreview = snapshot
     ? computeSettlement({
@@ -828,6 +907,26 @@ export function LiveCurrentTopicSection({
           <p className="mt-2 font-medium">{formatMoney(displayPool.topicContribution, displayLeague.currency)}</p>
         </div>
       </div>
+
+      {currentTopicSettlement ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
+          <p className="font-medium uppercase tracking-[0.2em] text-sky-700">Saved settlement outcome</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl bg-white p-3">Winners: {currentTopicSettlement.winnerCount}</div>
+            <div className="rounded-xl bg-white p-3">Payout each: {formatMoney(currentTopicSettlement.payoutPerWinner, displayLeague.currency)}</div>
+            <div className="rounded-xl bg-white p-3">Next carryover: {formatMoney(currentTopicSettlement.nextPoolAmount, displayLeague.currency)}</div>
+            <div className="rounded-xl bg-white p-3">Settled: {formatDate(currentTopicSettlement.settledAt)}</div>
+          </div>
+          {currentTopicSettlement.winnerNames.length > 0 ? (
+            <p className="mt-3">Winners: {currentTopicSettlement.winnerNames.join(", ")}</p>
+          ) : (
+            <p className="mt-3">No winners were selected for this topic. The pool rolled forward.</p>
+          )}
+          {currentTopicSettlement.resolutionNote ? (
+            <p className="mt-2 text-sky-900/90">Note: {currentTopicSettlement.resolutionNote}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm text-zinc-600">
@@ -1035,6 +1134,16 @@ export function LiveCurrentTopicSection({
                       <p className="mt-2 font-medium text-zinc-900">{topic.title}</p>
                       <p className="mt-1 text-sm text-zinc-600">{topic.description}</p>
                       <p className="mt-2 text-xs text-zinc-500">Closes {formatDate(topic.closeAt)}</p>
+                      {topic.settlement ? (
+                        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
+                          <p>
+                            Settled {formatDate(topic.settlement.settledAt)} • {topic.settlement.winnerCount} winner{topic.settlement.winnerCount === 1 ? "" : "s"} • next carryover {formatMoney(topic.settlement.nextPoolAmount, displayLeague.currency)}
+                          </p>
+                          <p className="mt-1">Payout each: {formatMoney(topic.settlement.payoutPerWinner, displayLeague.currency)}</p>
+                          {topic.settlement.winnerNames.length > 0 ? <p className="mt-1">Winners: {topic.settlement.winnerNames.join(", ")}</p> : null}
+                          {topic.settlement.resolutionNote ? <p className="mt-1">Note: {topic.settlement.resolutionNote}</p> : null}
+                        </div>
+                      ) : null}
                     </div>
                     {isAdmin ? (
                       <div className="flex flex-wrap gap-2">
