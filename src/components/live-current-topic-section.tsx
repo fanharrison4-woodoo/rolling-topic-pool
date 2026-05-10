@@ -8,6 +8,7 @@ import {
   canLeagueAdminCloseTopic,
   canLeagueAdminDeclareWinners,
   canLeagueAdminOpenTopic,
+  canSettleTopicByOrder,
   getFeaturedTopicId,
   getNextTopicStatusOnCreate,
   getTopicDisplayStatus,
@@ -702,6 +703,23 @@ export function LiveCurrentTopicSection({
       return;
     }
 
+    const eligibility = canSettleTopicByOrder(
+      snapshot.topics.map((topic) => ({
+        id: topic.id,
+        order: topic.order,
+        closeAt: topic.closeAt,
+        status: topic.status,
+      })),
+      snapshot.currentTopic.id,
+    );
+
+    if (!eligibility.eligible) {
+      setTopicStatus(
+        `Settle topic #${eligibility.blockingTopicOrder ?? "?"} first. Earlier topics must be settled in order before this round can finalize.`,
+      );
+      return;
+    }
+
     const winnerCount = selectedWinnerUserIds.length;
     const settlement = computeSettlement({
       carryoverAmount: snapshot.carryover,
@@ -840,6 +858,17 @@ export function LiveCurrentTopicSection({
   const currentTopicPredictions = snapshot?.topicPredictions ?? [];
   const currentTopicSettlement = snapshot?.currentTopicSettlement ?? null;
   const selectedWinnerCount = selectedWinnerUserIds.length;
+  const settlementEligibility = snapshot?.currentTopic
+    ? canSettleTopicByOrder(
+        snapshot.topics.map((topic) => ({
+          id: topic.id,
+          order: topic.order,
+          closeAt: topic.closeAt,
+          status: topic.status,
+        })),
+        snapshot.currentTopic.id,
+      )
+    : { eligible: false };
   const settlementPreview = snapshot
     ? computeSettlement({
         carryoverAmount: snapshot.carryover,
@@ -1033,11 +1062,16 @@ export function LiveCurrentTopicSection({
                       <button
                         type="button"
                         onClick={handleSettleCurrentTopic}
-                        disabled={settlingTopic}
+                        disabled={settlingTopic || !settlementEligibility.eligible}
                         className="mt-3 rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {settlingTopic ? "Settling topic..." : "Settle topic"}
                       </button>
+                      {!settlementEligibility.eligible ? (
+                        <p className="mt-2 text-xs text-amber-700">
+                          Topic #{settlementEligibility.blockingTopicOrder ?? "?"} must be settled first because pool carryover follows topic order.
+                        </p>
+                      ) : null}
                     </div>
                     <div className="grid gap-2 text-sm text-zinc-700">
                       <div className="rounded-xl bg-white p-3">Contribution: {formatMoney(settlementPreview.contributionAmount, displayLeague.currency)}</div>

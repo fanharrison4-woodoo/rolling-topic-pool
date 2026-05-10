@@ -44,6 +44,13 @@ export interface WorkflowTopicSummary extends OrderedTopicCloseTime {
   status: TopicStatus;
 }
 
+export interface TopicSettlementEligibilityResult {
+  eligible: boolean;
+  blockingTopicId?: string;
+  blockingTopicOrder?: number;
+  blockingTopicStatus?: WorkflowTopicStatus;
+}
+
 export function getFeaturedTopicId(topics: WorkflowTopicSummary[]) {
   const orderedTopics = [...topics].sort((a, b) => a.order - b.order);
 
@@ -69,6 +76,34 @@ export interface TopicOrderValidationResult {
     currentOrder: number;
     currentCloseAt: string;
   };
+}
+
+export function canSettleTopicByOrder(
+  topics: WorkflowTopicSummary[],
+  topicId: string,
+): TopicSettlementEligibilityResult {
+  const orderedTopics = [...topics].sort((a, b) => a.order - b.order);
+  const targetIndex = orderedTopics.findIndex((topic) => topic.id === topicId);
+
+  if (targetIndex === -1) {
+    throw new Error("topicId must exist in topics");
+  }
+
+  for (let index = 0; index < targetIndex; index += 1) {
+    const priorTopic = orderedTopics[index];
+    const normalizedStatus = normalizeTopicStatus(priorTopic.status);
+
+    if (normalizedStatus !== "settled") {
+      return {
+        eligible: false,
+        blockingTopicId: priorTopic.id,
+        blockingTopicOrder: priorTopic.order,
+        blockingTopicStatus: normalizedStatus,
+      };
+    }
+  }
+
+  return { eligible: true };
 }
 
 export function validateTopicCloseTimesByOrder(

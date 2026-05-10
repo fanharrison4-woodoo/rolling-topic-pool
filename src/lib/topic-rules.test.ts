@@ -5,9 +5,10 @@ import {
   canLeagueAdminEditTopic,
   canLeagueAdminOpenTopic,
   canPlayerSubmitPrediction,
+  canPlayersViewAllPredictions,
+  canSettleTopicByOrder,
   getFeaturedTopicId,
   getNextTopicStatusOnCreate,
-  canPlayersViewAllPredictions,
   getTopicDisplayStatus,
   validateTopicCloseTimesByOrder,
 } from "./topic-rules";
@@ -70,6 +71,35 @@ describe("topic-rules", () => {
         { id: "topic-1", order: 1, closeAt: "2026-01-01T00:00:00Z", status: "closed" },
       ]),
     ).toBe("topic-1");
+  });
+
+  it("blocks settlement when an earlier topic is not settled yet", () => {
+    expect(
+      canSettleTopicByOrder(
+        [
+          { id: "topic-1", order: 1, closeAt: "2026-01-01T00:00:00Z", status: "closed" },
+          { id: "topic-2", order: 2, closeAt: "2026-01-02T00:00:00Z", status: "closed" },
+        ],
+        "topic-2",
+      ),
+    ).toEqual({
+      eligible: false,
+      blockingTopicId: "topic-1",
+      blockingTopicOrder: 1,
+      blockingTopicStatus: "closed",
+    });
+  });
+
+  it("allows settlement when earlier topics are already settled", () => {
+    expect(
+      canSettleTopicByOrder(
+        [
+          { id: "topic-1", order: 1, closeAt: "2026-01-01T00:00:00Z", status: "settled" },
+          { id: "topic-2", order: 2, closeAt: "2026-01-02T00:00:00Z", status: "closed" },
+        ],
+        "topic-2",
+      ),
+    ).toEqual({ eligible: true });
   });
 
   it("allows equal close times for ordered topics", () => {
