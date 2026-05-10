@@ -62,7 +62,20 @@ export function AuthStatusCard({ projectHost, configured }: AuthStatusCardProps)
       if (error) {
         setAuthError(error.message);
       } else {
-        setSession(data.session ?? null);
+        const activeSession = data.session ?? null;
+        setSession(activeSession);
+
+        if (activeSession) {
+          const googleName =
+            (activeSession.user.user_metadata?.full_name as string | undefined) ??
+            (activeSession.user.user_metadata?.name as string | undefined);
+          if (googleName) {
+            void client.from("users_profile").upsert(
+              { id: activeSession.user.id, display_name: googleName },
+              { onConflict: "id" },
+            );
+          }
+        }
       }
 
       setLoading(false);

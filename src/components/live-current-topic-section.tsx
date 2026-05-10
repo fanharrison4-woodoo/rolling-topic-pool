@@ -7,6 +7,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase";
 import {
   canLeagueAdminCloseTopic,
   canLeagueAdminDeclareWinners,
+  canLeagueAdminEditTopic,
   canLeagueAdminOpenTopic,
   canSettleTopicByOrder,
   getFeaturedTopicId,
@@ -141,6 +142,12 @@ export function LiveCurrentTopicSection({
   const [roleStatus, setRoleStatus] = useState<string | null>(null);
   const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
   const [changingTopicId, setChangingTopicId] = useState<string | null>(null);
+  const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCloseAt, setEditCloseAt] = useState("");
+  const [editStatus, setEditStatus] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [selectedWinnerUserIds, setSelectedWinnerUserIds] = useState<string[]>([]);
   const [resolutionNote, setResolutionNote] = useState("");
   const [settlingTopic, setSettlingTopic] = useState(false);
@@ -819,6 +826,75 @@ export function LiveCurrentTopicSection({
     setChangingRoleUserId(null);
   }
 
+  function startEditingTopic(topic: { id: string; title: string; description: string; closeAt: string }) {
+    setEditingTopicId(topic.id);
+    setEditTitle(topic.title);
+    setEditDescription(topic.description);
+    const localCloseAt = new Date(topic.closeAt).toLocaleString("sv-SE", { hour12: false }).replace(" ", "T").slice(0, 16);
+    setEditCloseAt(localCloseAt);
+    setEditStatus(null);
+  }
+
+  function cancelEditingTopic() {
+    setEditingTopicId(null);
+    setEditStatus(null);
+  }
+
+  async function handleSaveTopicEdit(topicId: string) {
+    if (!supabase || !session || !snapshot || snapshot.league.viewerRole !== "admin") {
+      return;
+    }
+
+    const nextTitle = editTitle.trim();
+    const nextDescription = editDescription.trim();
+
+    if (!nextTitle) {
+      setEditStatus("Title is required.");
+      return;
+    }
+
+    if (!editCloseAt) {
+      setEditStatus("Close time is required.");
+      return;
+    }
+
+    const nextCloseAtIso = new Date(editCloseAt).toISOString();
+    const otherTopics = snapshot.topics.filter((t) => t.id !== topicId);
+    const orderingResult = validateTopicCloseTimesByOrder([
+      ...otherTopics.map((t) => ({ order: t.order, closeAt: t.closeAt })),
+      { order: snapshot.topics.find((t) => t.id === topicId)!.order, closeAt: nextCloseAtIso },
+    ]);
+
+    if (!orderingResult.valid) {
+      setEditStatus("Close time conflicts with topic order. Later topics cannot close earlier than previous ones.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditStatus(null);
+
+    const { error: updateError } = await supabase
+      .from("topics")
+      .update({
+        title: nextTitle,
+        description: nextDescription || null,
+        close_at: nextCloseAtIso,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", topicId);
+
+    if (updateError) {
+      setEditStatus(updateError.message);
+      setSavingEdit(false);
+      return;
+    }
+
+    await loadLiveState(session);
+    setEditingTopicId(null);
+    setEditStatus(null);
+    setSavingEdit(false);
+  }
+
   const usingLiveData = Boolean(session && snapshot);
   const displayLeague = snapshot
     ? {
@@ -1181,6 +1257,16 @@ export function LiveCurrentTopicSection({
                     </div>
                     {isAdmin ? (
                       <div className="flex flex-wrap gap-2">
+                        {canLeagueAdminEditTopic(topic.status) ? (
+                          <button
+                            type="button"
+                            onClick={() => editingTopicId === topic.id ? cancelEditingTopic() : startEditingTopic(topic)}
+                            disabled={changingTopicId === topic.id}
+                            className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {editingTopicId === topic.id ? "Cancel" : "Edit"}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => handleChangeTopicStatus(topic.id, "open")}
@@ -1200,6 +1286,55 @@ export function LiveCurrentTopicSection({
                       </div>
                     ) : null}
                   </div>
+                  {editingTopicId === topic.id ? (
+                    <div className="mt-4 grid gap-3 border-t border-zinc-200 pt-4">
+                      <p className="text-sm font-medium text-zinc-900">Edit draft topic</p>
+                      <div>
+                        <label className="text-xs font-medium text-zinc-600">Title</label>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-zinc-600">Description</label>
+                        <textarea
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          className="mt-1 min-h-20 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-zinc-600">Close time</label>
+                        <input
+                          type="datetime-local"
+                          value={editCloseAt}
+                          onChange={(e) => setEditCloseAt(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTopicEdit(topic.id)}
+                          disabled={savingEdit}
+                          className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {savingEdit ? "Saving…" : "Save changes"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditingTopic}
+                          className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-medium text-zinc-900"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {editStatus ? <p className="text-xs text-rose-700">{editStatus}</p> : null}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
