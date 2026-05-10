@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
@@ -297,16 +298,24 @@ export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: Liv
                   </p>
                 ) : null}
               </div>
-              {item.settlement ? (
-                <div className="min-w-[260px] rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
-                  <p>Settled {formatDate(item.settlement.settledAt)}</p>
-                  <p className="mt-1">Winners: {item.settlement.winnerCount}</p>
-                  <p className="mt-1">Payout each: {formatMoney(item.settlement.payoutPerWinner, currency)}</p>
-                  <p className="mt-1">Next carryover: {formatMoney(item.settlement.nextPoolAmount, currency)}</p>
-                  {item.settlement.winnerNames.length > 0 ? <p className="mt-1">Winners: {item.settlement.winnerNames.join(", ")}</p> : null}
-                  {item.settlement.resolutionNote ? <p className="mt-1">Note: {item.settlement.resolutionNote}</p> : null}
-                </div>
-              ) : null}
+              <div className="flex min-w-[260px] flex-col gap-3">
+                {item.settlement ? (
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+                    <p>Settled {formatDate(item.settlement.settledAt)}</p>
+                    <p className="mt-1">Winners: {item.settlement.winnerCount}</p>
+                    <p className="mt-1">Payout each: {formatMoney(item.settlement.payoutPerWinner, currency)}</p>
+                    <p className="mt-1">Next carryover: {formatMoney(item.settlement.nextPoolAmount, currency)}</p>
+                    {item.settlement.winnerNames.length > 0 ? <p className="mt-1">Winners: {item.settlement.winnerNames.join(", ")}</p> : null}
+                    {item.settlement.resolutionNote ? <p className="mt-1">Note: {item.settlement.resolutionNote}</p> : null}
+                  </div>
+                ) : null}
+                <Link
+                  href={`/topics/${item.id}`}
+                  className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-100"
+                >
+                  View topic detail
+                </Link>
+              </div>
             </div>
           </div>
         ))}
