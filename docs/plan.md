@@ -223,6 +223,12 @@ Constraint:
 - commit SHA in footer
 - hide others’ predictions before lock if desired
 
+### Phase 6 — E2E testing
+- Add Playwright against a dedicated test Supabase project
+- Cover the core player loop: sign in → join league → submit prediction → view locked predictions after close
+- Cover the admin loop: create topic → open → close → settle with winners → verify carryover math
+- Cover role enforcement: player cannot access admin actions, unauthenticated visitor sees sign-in prompt
+
 ---
 
 ## UI feedback backlog (Phase 3 follow-up)
