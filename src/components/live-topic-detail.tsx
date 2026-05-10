@@ -252,7 +252,7 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-medium text-white">#{topic.order}</span>
             <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(topic.status)}`}>{getTopicDisplayStatus(topic.status)}</span>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>{usingLiveData ? "Live from Supabase" : "Mock preview"}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>{usingLiveData ? "Live from Supabase" : "Preview mode"}</span>
           </div>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight">{topic.title}</h2>
           <p className="mt-2 max-w-3xl text-zinc-600">{topic.description}</p>

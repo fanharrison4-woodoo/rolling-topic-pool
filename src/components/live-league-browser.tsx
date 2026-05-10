@@ -273,7 +273,7 @@ export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: Liv
           </p>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>
-          {usingLiveData ? "Live from Supabase" : "Mock preview"}
+          {usingLiveData ? "Live from Supabase" : "Preview mode"}
         </span>
       </div>
 

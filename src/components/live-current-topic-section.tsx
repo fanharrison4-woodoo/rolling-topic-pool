@@ -885,7 +885,7 @@ export function LiveCurrentTopicSection({
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Current topic</p>
             <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>
-              {usingLiveData ? "Live from Supabase" : "Mock preview"}
+              {usingLiveData ? "Live from Supabase" : "Preview mode"}
             </span>
           </div>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight">{displayTopic.title}</h2>
@@ -966,7 +966,7 @@ export function LiveCurrentTopicSection({
           <p>
             {error
               ? `Couldn’t load live data yet: ${error}`
-              : "You’re signed in, but this account doesn’t see a league/topic in Supabase yet. The homepage is still falling back to the mock preview below."}
+              : "You’re signed in, but this account doesn’t see a league/topic in Supabase yet. The homepage is still falling back to preview data below."}
           </p>
           {!error ? (
             <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1223,7 +1223,7 @@ export function LiveCurrentTopicSection({
                     ? "Join the league first, then you can submit your prediction."
                   : session
                     ? "Prediction saving unlocks when there’s an open topic in live data."
-                    : "Sign in to switch this section from mock preview to live data."}
+                    : "Sign in to switch this section from preview data to live data."}
             </p>
           </div>
           <button
@@ -1259,7 +1259,7 @@ export function LiveCurrentTopicSection({
             disabled={!canSaveLive || saving}
             className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? "Saving..." : canSaveLive ? "Save to Supabase" : usingLiveData ? "Member action required" : "Save draft mock"}
+            {saving ? "Saving..." : canSaveLive ? "Save to Supabase" : usingLiveData ? "Member action required" : "Preview only"}
           </button>
         </div>
 
@@ -1267,8 +1267,8 @@ export function LiveCurrentTopicSection({
           {saveStatus
             ? saveStatus
             : usingLiveData
-              ? "This box is now wired for the real current topic + your real prediction row. The rest of the page is still partly mock for now."
-              : "This area is still showing mock content until you’re signed in and live league data exists."}
+              ? "This box is wired to the real current topic and your real prediction row."
+              : "This area is showing preview data until you’re signed in and live league data exists."}
         </div>
 
         {currentTopicPredictions.length > 0 ? (
