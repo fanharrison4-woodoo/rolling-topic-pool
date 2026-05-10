@@ -16,14 +16,7 @@ import {
   validateTopicCloseTimesByOrder,
 } from "@/lib/topic-rules";
 import { canRevealPredictionsToPlayers, computeSettlement } from "@/lib/settlement-rules";
-import type { League, PoolState, Prediction, Topic } from "@/lib/types";
-
-interface LiveCurrentTopicSectionProps {
-  fallbackLeague: League;
-  fallbackPool: PoolState;
-  fallbackTopic: Topic;
-  fallbackUserPrediction?: Prediction;
-}
+import type { Topic } from "@/lib/types";
 
 interface LiveSnapshot {
   league: {
@@ -118,18 +111,13 @@ function statusTone(status: Topic["status"]) {
   }
 }
 
-export function LiveCurrentTopicSection({
-  fallbackLeague,
-  fallbackPool,
-  fallbackTopic,
-  fallbackUserPrediction,
-}: LiveCurrentTopicSectionProps) {
+export function LiveCurrentTopicSection() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(() => Boolean(supabase));
   const [error, setError] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
-  const [draft, setDraft] = useState(fallbackUserPrediction?.text ?? "");
+  const [draft, setDraft] = useState("");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
@@ -162,7 +150,7 @@ export function LiveCurrentTopicSection({
 
     if (!activeSession) {
       setSnapshot(null);
-      setDraft(fallbackUserPrediction?.text ?? "");
+      setDraft("");
       setLoading(false);
       return;
     }
@@ -422,7 +410,7 @@ export function LiveCurrentTopicSection({
     setSelectedWinnerUserIds([]);
     setResolutionNote("");
     setLoading(false);
-  }, [fallbackUserPrediction?.text, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
     if (!supabase) {
@@ -478,9 +466,9 @@ export function LiveCurrentTopicSection({
 
     if (!leagueId) {
       const { data: bootstrappedLeagueId, error: bootstrapError } = await supabase.rpc("bootstrap_league", {
-        league_name: fallbackLeague.name,
-        stake: fallbackLeague.stakePerTopic,
-        league_currency: fallbackLeague.currency,
+        league_name: "My Pool",
+        stake: 5,
+        league_currency: "USD",
       });
 
       if (bootstrapError) {
@@ -490,37 +478,6 @@ export function LiveCurrentTopicSection({
       }
 
       leagueId = bootstrappedLeagueId;
-    }
-
-    const { data: existingTopics, error: topicLookupError } = await supabase
-      .from("topics")
-      .select("id")
-      .eq("league_id", leagueId)
-      .limit(1);
-
-    if (topicLookupError) {
-      setError(topicLookupError.message);
-      setBootstrapping(false);
-      return;
-    }
-
-    if (!existingTopics || existingTopics.length === 0) {
-      const { error: topicInsertError } = await supabase.from("topics").insert({
-        league_id: leagueId,
-        order_index: 1,
-        title: fallbackTopic.title,
-        description: fallbackTopic.description,
-        status: "open",
-        open_at: new Date().toISOString(),
-        close_at: fallbackTopic.closeAt,
-        created_by: session.user.id,
-      });
-
-      if (topicInsertError) {
-        setError(topicInsertError.message);
-        setBootstrapping(false);
-        return;
-      }
     }
 
     await loadLiveState(session);
@@ -895,35 +852,6 @@ export function LiveCurrentTopicSection({
     setSavingEdit(false);
   }
 
-  const usingLiveData = Boolean(session && snapshot);
-  const displayLeague = snapshot
-    ? {
-        name: snapshot.league.name,
-        stakePerTopic: snapshot.league.stakeAmount,
-        currency: snapshot.league.currency,
-        playerCount: snapshot.league.playerCount,
-        viewerRole: snapshot.league.viewerRole,
-        viewerIsAppAdmin: snapshot.league.viewerIsAppAdmin,
-        topicCount: snapshot.league.topicCount,
-      }
-    : {
-        name: fallbackLeague.name,
-        stakePerTopic: fallbackLeague.stakePerTopic,
-        currency: fallbackLeague.currency,
-        playerCount: fallbackLeague.playerIds.length,
-        viewerRole: null,
-        viewerIsAppAdmin: false,
-        topicCount: 0,
-      };
-  const displayTopic = snapshot?.currentTopic ?? fallbackTopic;
-  const displayPool = snapshot
-    ? {
-        accumulatedPool: snapshot.carryover,
-        topicContribution: snapshot.contribution,
-        totalPool: snapshot.totalPool,
-      }
-    : fallbackPool;
-  const displayPrediction = snapshot?.userPrediction ?? fallbackUserPrediction ?? null;
   const canSaveLive = Boolean(session && snapshot?.league.viewerRole && snapshot?.currentTopic?.status === "open");
   const isAdmin = snapshot?.league.viewerRole === "admin";
   const isMember = Boolean(snapshot?.league.viewerRole);
@@ -954,491 +882,434 @@ export function LiveCurrentTopicSection({
       })
     : null;
 
+  if (!supabase) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600">
+        Supabase is not configured in this environment.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="h-8 w-2/3 animate-pulse rounded-xl bg-zinc-200" />
+        <div className="h-4 w-full animate-pulse rounded-xl bg-zinc-100" />
+        <div className="h-4 w-5/6 animate-pulse rounded-xl bg-zinc-100" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center">
+        <p className="text-lg font-semibold text-zinc-900">Sign in to join the pool</p>
+        <p className="mt-2 text-sm text-zinc-600">Use the Sign in button in the top-right corner to get started.</p>
+      </div>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-700">
+        {error ? (
+          <p className="text-rose-600">{error}</p>
+        ) : (
+          <div className="space-y-4">
+            <p>No league found for your account yet.</p>
+            <button
+              type="button"
+              onClick={handleBootstrap}
+              disabled={bootstrapping}
+              className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {bootstrapping ? "Creating league…" : "Create league"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const currency = snapshot.league.currency;
+
   return (
-    <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Current topic</p>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>
-              {usingLiveData ? "Live from Supabase" : "Preview mode"}
+    <div className="space-y-6">
+      {/* Current topic header */}
+      {snapshot.currentTopic ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Current topic</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight">{snapshot.currentTopic.title}</h2>
+              <p className="mt-2 text-zinc-600">{snapshot.currentTopic.description}</p>
+            </div>
+            <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-medium ${statusTone(snapshot.currentTopic.status)}`}>
+              {getTopicDisplayStatus(snapshot.currentTopic.status)}
             </span>
           </div>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight">{displayTopic.title}</h2>
-          <p className="mt-2 max-w-2xl text-zinc-600">{displayTopic.description}</p>
-        </div>
-        <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusTone(displayTopic.status)}`}>
-          {getTopicDisplayStatus(displayTopic.status)}
-        </span>
-      </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl bg-zinc-50 p-4">
-          <p className="text-sm text-zinc-500">League</p>
-          <p className="mt-2 font-medium">{displayLeague.name}</p>
-          <p className="mt-1 text-xs text-zinc-500">
-            {displayLeague.viewerIsAppAdmin
-              ? `Access: app admin${displayLeague.viewerRole ? ` + league ${displayLeague.viewerRole}` : ""}`
-              : displayLeague.viewerRole
-                ? `Access: league ${displayLeague.viewerRole}`
-                : "Access: viewer"}
-          </p>
-        </div>
-        <div className="rounded-2xl bg-zinc-50 p-4">
-          <p className="text-sm text-zinc-500">Players</p>
-          <p className="mt-2 font-medium">{displayLeague.playerCount}</p>
-        </div>
-        <div className="rounded-2xl bg-zinc-50 p-4">
-          <p className="text-sm text-zinc-500">Stake</p>
-          <p className="mt-2 font-medium">{formatMoney(displayLeague.stakePerTopic, displayLeague.currency)}</p>
-        </div>
-        <div className="rounded-2xl bg-zinc-950 p-4 text-white">
-          <p className="text-sm text-zinc-300">Total pool if settled now</p>
-          <p className="mt-2 text-2xl font-semibold">{formatMoney(displayPool.totalPool, displayLeague.currency)}</p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl bg-zinc-50 p-4">
-          <p className="text-sm text-zinc-500">Close time</p>
-          <p className="mt-2 font-medium">{formatDate(displayTopic.closeAt)}</p>
-        </div>
-        <div className="rounded-2xl bg-zinc-50 p-4">
-          <p className="text-sm text-zinc-500">Carryover before round</p>
-          <p className="mt-2 font-medium">{formatMoney(displayPool.accumulatedPool, displayLeague.currency)}</p>
-        </div>
-        <div className="rounded-2xl bg-zinc-50 p-4">
-          <p className="text-sm text-zinc-500">New round contributions</p>
-          <p className="mt-2 font-medium">{formatMoney(displayPool.topicContribution, displayLeague.currency)}</p>
-        </div>
-      </div>
-
-      {currentTopicSettlement ? (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
-          <p className="font-medium uppercase tracking-[0.2em] text-sky-700">Saved settlement outcome</p>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl bg-white p-3">Winners: {currentTopicSettlement.winnerCount}</div>
-            <div className="rounded-xl bg-white p-3">Payout each: {formatMoney(currentTopicSettlement.payoutPerWinner, displayLeague.currency)}</div>
-            <div className="rounded-xl bg-white p-3">Next carryover: {formatMoney(currentTopicSettlement.nextPoolAmount, displayLeague.currency)}</div>
-            <div className="rounded-xl bg-white p-3">Settled: {formatDate(currentTopicSettlement.settledAt)}</div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">League</p>
+              <p className="mt-1 text-sm font-medium">{snapshot.league.name}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Players</p>
+              <p className="mt-1 text-sm font-medium">{snapshot.league.playerCount}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Stake</p>
+              <p className="mt-1 text-sm font-medium">{formatMoney(snapshot.league.stakeAmount, currency)}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-3 text-white">
+              <p className="text-xs text-zinc-300">Total pool</p>
+              <p className="mt-1 text-sm font-semibold">{formatMoney(snapshot.totalPool, currency)}</p>
+            </div>
           </div>
-          {currentTopicSettlement.winnerNames.length > 0 ? (
-            <p className="mt-3">Winners: {currentTopicSettlement.winnerNames.join(", ")}</p>
-          ) : (
-            <p className="mt-3">No winners were selected for this topic. The pool rolled forward.</p>
-          )}
-          {currentTopicSettlement.resolutionNote ? (
-            <p className="mt-2 text-sky-900/90">Note: {currentTopicSettlement.resolutionNote}</p>
-          ) : null}
-        </div>
-      ) : null}
 
-      {loading ? (
-        <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm text-zinc-600">
-          Restoring live league data...
-        </div>
-      ) : session && !snapshot ? (
-        <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm text-zinc-700">
-          <p>
-            {error
-              ? `Couldn’t load live data yet: ${error}`
-              : "You’re signed in, but this account doesn’t see a league/topic in Supabase yet. The homepage is still falling back to preview data below."}
-          </p>
-          {!error ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleBootstrap}
-                disabled={bootstrapping}
-                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {bootstrapping ? "Creating starter data..." : "Create starter league + topic"}
-              </button>
-              <p className="text-xs text-zinc-500">
-                This will create your first league, make you admin, and open one starter topic so the real flow works.
-              </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Closes</p>
+              <p className="mt-1 text-sm font-medium">{formatDate(snapshot.currentTopic.closeAt)}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Carryover</p>
+              <p className="mt-1 text-sm font-medium">{formatMoney(snapshot.carryover, currency)}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">New contributions</p>
+              <p className="mt-1 text-sm font-medium">{formatMoney(snapshot.contribution, currency)}</p>
+            </div>
+          </div>
+
+          {currentTopicSettlement ? (
+            <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+              <p className="font-medium text-sky-700">Settlement outcome</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-lg bg-white p-2 text-xs">Winners: {currentTopicSettlement.winnerCount}</div>
+                <div className="rounded-lg bg-white p-2 text-xs">Payout: {formatMoney(currentTopicSettlement.payoutPerWinner, currency)}</div>
+                <div className="rounded-lg bg-white p-2 text-xs">Next pool: {formatMoney(currentTopicSettlement.nextPoolAmount, currency)}</div>
+                <div className="rounded-lg bg-white p-2 text-xs">{formatDate(currentTopicSettlement.settledAt)}</div>
+              </div>
+              {currentTopicSettlement.winnerNames.length > 0
+                ? <p className="mt-2 text-xs">Winners: {currentTopicSettlement.winnerNames.join(", ")}</p>
+                : <p className="mt-2 text-xs">No winners — pool rolled forward.</p>}
+              {currentTopicSettlement.resolutionNote && <p className="mt-1 text-xs">Note: {currentTopicSettlement.resolutionNote}</p>}
             </div>
           ) : null}
         </div>
+      ) : (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <p className="text-sm text-zinc-500">{snapshot.league.name}</p>
+          <p className="mt-2 text-zinc-700">No active topic right now.{isAdmin ? " Create one below." : " Check back soon."}</p>
+        </div>
+      )}
+
+      {/* Membership / join */}
+      {canJoinLeague ? (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-zinc-200 bg-white p-5">
+          <div>
+            <p className="font-medium text-zinc-900">Not participating yet</p>
+            <p className="mt-1 text-sm text-zinc-600">Join to submit predictions.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleJoinLeague}
+            disabled={joining}
+            className="shrink-0 rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {joining ? "Joining…" : "Join league"}
+          </button>
+        </div>
       ) : null}
 
-      {session && snapshot ? (
-        <div className="rounded-2xl bg-white px-4 py-3 text-sm text-zinc-700">
-          {isAdmin ? (
-            <>
-              <p className="font-medium text-zinc-900">Admin access</p>
-              <p className="mt-1">You’re authorized to create/edit league settings, manage topics, and judge winners.</p>
-              <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-                <p className="font-medium text-zinc-900">Create topic</p>
-                <p className="mt-1 text-sm text-zinc-600">New topics are appended to this league. If an open topic already exists, the new one is created as draft.</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  {canJudgeCurrentTopic ? "The current topic is closed, so this is also the phase where league admins can declare winners." : "League admins can declare winners once a topic reaches the closed state."}
-                </p>
-                <div className="mt-4 grid gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-zinc-700">Title</label>
-                    <input
-                      type="text"
-                      value={topicTitle}
-                      onChange={(event) => setTopicTitle(event.target.value)}
-                      placeholder="2027 Oscars Best Picture"
-                      className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-700">Description</label>
-                    <textarea
-                      value={topicDescription}
-                      onChange={(event) => setTopicDescription(event.target.value)}
-                      placeholder="Which film will win Best Picture?"
-                      className="mt-2 min-h-24 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-700">Close time</label>
-                    <input
-                      type="datetime-local"
-                      value={topicCloseAt}
-                      onChange={(event) => setTopicCloseAt(event.target.value)}
-                      className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleCreateTopic}
-                      disabled={creatingTopic}
-                      className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {creatingTopic ? "Creating topic..." : "Create topic"}
-                    </button>
-                    <p className="text-xs text-zinc-500">Current topics: {displayLeague.topicCount}</p>
-                  </div>
-                  {topicStatus ? <p className="text-sm text-zinc-700">{topicStatus}</p> : null}
-                </div>
-              </div>
-
-              {canJudgeCurrentTopic && settlementPreview ? (
-                <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-                  <p className="font-medium text-zinc-900">Settle current closed topic</p>
-                  <p className="mt-1 text-sm text-zinc-600">Select the winning players below, add an optional note, then persist the settlement.</p>
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm font-medium text-zinc-700">Selected winners</p>
-                      <div className="mt-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
-                        {selectedWinnerCount}
-                      </div>
-                      <label className="mt-3 block text-sm font-medium text-zinc-700">Resolution note</label>
-                      <textarea
-                        value={resolutionNote}
-                        onChange={(event) => setResolutionNote(event.target.value)}
-                        placeholder="Optional note about the result or tie-break"
-                        className="mt-2 min-h-24 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSettleCurrentTopic}
-                        disabled={settlingTopic || !settlementEligibility.eligible}
-                        className="mt-3 rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {settlingTopic ? "Settling topic..." : "Settle topic"}
-                      </button>
-                      {!settlementEligibility.eligible ? (
-                        <p className="mt-2 text-xs text-amber-700">
-                          Topic #{settlementEligibility.blockingTopicOrder ?? "?"} must be settled first because pool carryover follows topic order.
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="grid gap-2 text-sm text-zinc-700">
-                      <div className="rounded-xl bg-white p-3">Contribution: {formatMoney(settlementPreview.contributionAmount, displayLeague.currency)}</div>
-                      <div className="rounded-xl bg-white p-3">Total pool: {formatMoney(settlementPreview.totalPoolAmount, displayLeague.currency)}</div>
-                      <div className="rounded-xl bg-white p-3">Payout per winner: {formatMoney(settlementPreview.payoutPerWinner, displayLeague.currency)}</div>
-                      <div className="rounded-xl bg-white p-3">Next carryover: {formatMoney(settlementPreview.nextCarryoverAmount, displayLeague.currency)}</div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : isMember ? (
-            <>
-              <p className="font-medium text-zinc-900">Player access</p>
-              <p className="mt-1">You’re participating in this league. You can edit only your own prediction before the topic closes.</p>
-            </>
+      {/* Prediction form */}
+      {snapshot.currentTopic && isMember ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Your prediction</p>
+          {snapshot.userPrediction ? (
+            <p className="mt-2 font-medium text-zinc-900">{snapshot.userPrediction.text}</p>
           ) : (
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="font-medium text-zinc-900">Not participating yet</p>
-                <p className="mt-1">Join this league to submit your own prediction. League/topic editing and winner judging stay admin-only.</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleJoinLeague}
-                disabled={joining}
-                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {joining ? "Joining..." : "Participate / Join league"}
-              </button>
-            </div>
+            <p className="mt-2 text-sm text-zinc-500">No prediction submitted yet.</p>
+          )}
+          {snapshot.userPrediction && (
+            <p className="mt-1 text-xs text-zinc-400">Last updated {formatDate(snapshot.userPrediction.updatedAt)}</p>
           )}
 
-          {isAppAdmin ? (
-            <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-              <p className="font-medium text-zinc-900">App admin: league role management</p>
-              <p className="mt-1 text-sm text-zinc-600">Global admins can promote/demote league admins here. League admins still manage the league itself.</p>
-              <div className="mt-4 space-y-3">
-                {snapshot.members.map((member) => (
-                  <div key={member.userId} className="flex flex-col gap-3 rounded-xl bg-white p-3 md:flex-row md:items-center md:justify-between">
+          {canSaveLive ? (
+            <div className="mt-4 space-y-3">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                disabled={saving}
+                placeholder="Type your prediction here"
+                className="min-h-24 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none placeholder:text-zinc-400 disabled:opacity-50"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : snapshot.userPrediction ? "Update prediction" : "Submit prediction"}
+                </button>
+                {saveStatus && <p className="text-sm text-zinc-600">{saveStatus}</p>}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-zinc-400">
+              {snapshot.currentTopic.status === "open" ? "Predictions are open." : "Predictions are locked — topic is closed."}
+            </p>
+          )}
+
+          {currentTopicPredictions.length > 0 ? (
+            <div className="mt-6">
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">All predictions</p>
+              <div className="mt-3 space-y-2">
+                {currentTopicPredictions.map((prediction) => (
+                  <div key={prediction.id} className="flex items-start justify-between gap-3 rounded-xl border border-zinc-100 p-3">
                     <div>
-                      <p className="font-medium text-zinc-900">
-                        {member.displayName}
-                        {member.isCurrentUser ? " (you)" : ""}
-                      </p>
-                      <p className="text-sm text-zinc-500">Current league role: {member.role === "admin" ? "league admin" : "player"}</p>
+                      <p className="text-sm font-medium text-zinc-900">{prediction.displayName}</p>
+                      <p className="mt-0.5 text-sm text-zinc-700">{prediction.predictionText}</p>
+                      <p className="mt-0.5 text-xs text-zinc-400">{formatDate(prediction.updatedAt)}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleChangeLeagueRole(member.userId, "admin")}
-                        disabled={changingRoleUserId === member.userId || member.role === "admin"}
-                        className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Make league admin
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleChangeLeagueRole(member.userId, "player")}
-                        disabled={changingRoleUserId === member.userId || member.role === "player"}
-                        className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Make player
-                      </button>
-                    </div>
+                    {canJudgeCurrentTopic ? (
+                      <label className="inline-flex shrink-0 items-center gap-2 text-sm text-zinc-700">
+                        <input
+                          type="checkbox"
+                          checked={selectedWinnerUserIds.includes(prediction.userId)}
+                          onChange={() => toggleWinnerSelection(prediction.userId)}
+                          disabled={settlingTopic}
+                        />
+                        Winner
+                      </label>
+                    ) : null}
                   </div>
                 ))}
               </div>
-              {roleStatus ? <p className="mt-3 text-sm text-zinc-700">{roleStatus}</p> : null}
             </div>
           ) : null}
         </div>
       ) : null}
 
-      {liveTopics.length > 0 ? (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">League topic queue</p>
-              <p className="mt-1 text-sm text-zinc-600">Topic order drives carryover. Multiple topics may be open at the same time.</p>
+      {/* Admin: settle closed topic */}
+      {isAdmin && canJudgeCurrentTopic && settlementPreview ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <p className="font-medium text-amber-900">Settle closed topic</p>
+          <p className="mt-1 text-sm text-amber-800">Winners already selected above. Add an optional note and confirm.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2 text-sm text-zinc-700">
+              <div className="rounded-xl bg-white p-3">Contribution: {formatMoney(settlementPreview.contributionAmount, currency)}</div>
+              <div className="rounded-xl bg-white p-3">Total pool: {formatMoney(settlementPreview.totalPoolAmount, currency)}</div>
+              <div className="rounded-xl bg-white p-3">Payout per winner: {formatMoney(settlementPreview.payoutPerWinner, currency)}</div>
+              <div className="rounded-xl bg-white p-3">Next carryover: {formatMoney(settlementPreview.nextCarryoverAmount, currency)}</div>
             </div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {liveTopics.map((topic) => {
-              const normalizedStatus = getTopicDisplayStatus(topic.status);
-              return (
-                <div key={topic.id} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-medium text-white">#{topic.order}</span>
-                        <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(topic.status)}`}>{normalizedStatus}</span>
-                      </div>
-                      <p className="mt-2 font-medium text-zinc-900">{topic.title}</p>
-                      <p className="mt-1 text-sm text-zinc-600">{topic.description}</p>
-                      <p className="mt-2 text-xs text-zinc-500">Closes {formatDate(topic.closeAt)}</p>
-                      {topic.settlement ? (
-                        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
-                          <p>
-                            Settled {formatDate(topic.settlement.settledAt)} • {topic.settlement.winnerCount} winner{topic.settlement.winnerCount === 1 ? "" : "s"} • next carryover {formatMoney(topic.settlement.nextPoolAmount, displayLeague.currency)}
-                          </p>
-                          <p className="mt-1">Payout each: {formatMoney(topic.settlement.payoutPerWinner, displayLeague.currency)}</p>
-                          {topic.settlement.winnerNames.length > 0 ? <p className="mt-1">Winners: {topic.settlement.winnerNames.join(", ")}</p> : null}
-                          {topic.settlement.resolutionNote ? <p className="mt-1">Note: {topic.settlement.resolutionNote}</p> : null}
-                        </div>
-                      ) : null}
-                    </div>
-                    {isAdmin ? (
-                      <div className="flex flex-wrap gap-2">
-                        {canLeagueAdminEditTopic(topic.status) ? (
-                          <button
-                            type="button"
-                            onClick={() => editingTopicId === topic.id ? cancelEditingTopic() : startEditingTopic(topic)}
-                            disabled={changingTopicId === topic.id}
-                            className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {editingTopicId === topic.id ? "Cancel" : "Edit"}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => handleChangeTopicStatus(topic.id, "open")}
-                          disabled={changingTopicId === topic.id || !canLeagueAdminOpenTopic(topic.status)}
-                          className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleChangeTopicStatus(topic.id, "closed")}
-                          disabled={changingTopicId === topic.id || !canLeagueAdminCloseTopic(topic.status)}
-                          className="rounded-full border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  {editingTopicId === topic.id ? (
-                    <div className="mt-4 grid gap-3 border-t border-zinc-200 pt-4">
-                      <p className="text-sm font-medium text-zinc-900">Edit draft topic</p>
-                      <div>
-                        <label className="text-xs font-medium text-zinc-600">Title</label>
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-zinc-600">Description</label>
-                        <textarea
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                          className="mt-1 min-h-20 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-zinc-600">Close time</label>
-                        <input
-                          type="datetime-local"
-                          value={editCloseAt}
-                          onChange={(e) => setEditCloseAt(e.target.value)}
-                          className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
-                        />
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => handleSaveTopicEdit(topic.id)}
-                          disabled={savingEdit}
-                          className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-50"
-                        >
-                          {savingEdit ? "Saving…" : "Save changes"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditingTopic}
-                          className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-medium text-zinc-900"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      {editStatus ? <p className="text-xs text-rose-700">{editStatus}</p> : null}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+            <div className="space-y-3">
+              <p className="text-sm text-zinc-700">{selectedWinnerCount} winner{selectedWinnerCount === 1 ? "" : "s"} selected</p>
+              <textarea
+                value={resolutionNote}
+                onChange={(e) => setResolutionNote(e.target.value)}
+                placeholder="Optional resolution note"
+                className="min-h-20 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleSettleCurrentTopic}
+                disabled={settlingTopic || !settlementEligibility.eligible}
+                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {settlingTopic ? "Settling…" : "Confirm settlement"}
+              </button>
+              {!settlementEligibility.eligible && (
+                <p className="text-xs text-amber-700">
+                  Topic #{settlementEligibility.blockingTopicOrder ?? "?"} must be settled first.
+                </p>
+              )}
+              {topicStatus && <p className="text-sm text-zinc-700">{topicStatus}</p>}
+            </div>
           </div>
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-5">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Your prediction</p>
-        <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-lg font-semibold text-zinc-900">
-              {displayPrediction?.text || (usingLiveData ? "No prediction submitted yet" : "No prediction submitted yet")}
-            </p>
-            <p className="mt-1 text-sm text-zinc-600">
-              {displayPrediction?.updatedAt
-                ? `Last updated ${formatDate(displayPrediction.updatedAt)}`
-                : canSaveLive
-                  ? "You can submit or edit until the close time."
-                  : canJoinLeague
-                    ? "Join the league first, then you can submit your prediction."
-                  : session
-                    ? "Prediction saving unlocks when there’s an open topic in live data."
-                    : "Sign in to switch this section from preview data to live data."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!canSaveLive || saving}
-            className="rounded-full bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving
-              ? "Saving..."
-              : canSaveLive
-                ? (displayPrediction ? "Update prediction" : "Submit prediction")
-                : canJoinLeague
-                  ? "Join league to play"
-                  : "Predictions locked"}
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-          <div>
-            <label className="text-sm font-medium text-zinc-700">Prediction text</label>
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              disabled={!canSaveLive || saving}
-              placeholder={canSaveLive ? "Type your prediction here" : canJoinLeague ? "Join the league to enter a prediction" : "Sign in and open a live topic to edit"}
-              className="mt-2 min-h-28 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none ring-0 placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-100"
+      {/* Admin: create topic */}
+      {isAdmin ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Create topic</p>
+          <p className="mt-1 text-sm text-zinc-600">Topics: {snapshot.league.topicCount}. A new topic is created as draft if an open one already exists.</p>
+          <div className="mt-4 space-y-3">
+            <input
+              type="text"
+              value={topicTitle}
+              onChange={(e) => setTopicTitle(e.target.value)}
+              placeholder="Topic title"
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
             />
-          </div>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!canSaveLive || saving}
-            className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? "Saving..." : canSaveLive ? "Save to Supabase" : usingLiveData ? "Member action required" : "Preview only"}
-          </button>
-        </div>
-
-        <div className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm text-zinc-700">
-          {saveStatus
-            ? saveStatus
-            : usingLiveData
-              ? "This box is wired to the real current topic and your real prediction row."
-              : "This area is showing preview data until you’re signed in and live league data exists."}
-        </div>
-
-        {currentTopicPredictions.length > 0 ? (
-          <div className="mt-4 rounded-2xl bg-white p-4">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Visible predictions</p>
-            <div className="mt-3 space-y-3">
-              {currentTopicPredictions.map((prediction) => {
-                const isSelectedWinner = selectedWinnerUserIds.includes(prediction.userId);
-                return (
-                  <div key={prediction.id} className="rounded-xl border border-zinc-200 p-3">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="font-medium text-zinc-900">{prediction.displayName}</p>
-                        <p className="mt-1 text-sm text-zinc-700">{prediction.predictionText}</p>
-                        <p className="mt-1 text-xs text-zinc-500">Updated {formatDate(prediction.updatedAt)}</p>
-                      </div>
-                      {canJudgeCurrentTopic ? (
-                        <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
-                          <input
-                            type="checkbox"
-                            checked={isSelectedWinner}
-                            onChange={() => toggleWinnerSelection(prediction.userId)}
-                            disabled={settlingTopic}
-                          />
-                          Winner
-                        </label>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
+            <textarea
+              value={topicDescription}
+              onChange={(e) => setTopicDescription(e.target.value)}
+              placeholder="Description / question (optional)"
+              className="min-h-20 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
+            />
+            <input
+              type="datetime-local"
+              value={topicCloseAt}
+              onChange={(e) => setTopicCloseAt(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCreateTopic}
+                disabled={creatingTopic}
+                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {creatingTopic ? "Creating…" : "Create topic"}
+              </button>
+              {topicStatus && <p className="text-sm text-zinc-600">{topicStatus}</p>}
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+
+      {/* Topic queue */}
+      {liveTopics.length > 0 ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">All topics</p>
+          <div className="mt-4 space-y-3">
+            {liveTopics.map((topic) => (
+              <div key={topic.id} className="rounded-xl border border-zinc-100 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-zinc-950 px-2 py-0.5 text-xs font-medium text-white">#{topic.order}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusTone(topic.status)}`}>{getTopicDisplayStatus(topic.status)}</span>
+                    </div>
+                    <p className="mt-2 font-medium text-zinc-900">{topic.title}</p>
+                    {topic.description && <p className="mt-0.5 text-sm text-zinc-600">{topic.description}</p>}
+                    <p className="mt-1 text-xs text-zinc-400">Closes {formatDate(topic.closeAt)}</p>
+                    {topic.settlement ? (
+                      <div className="mt-2 rounded-lg bg-sky-50 p-2 text-xs text-sky-800">
+                        Settled • {topic.settlement.winnerCount} winner{topic.settlement.winnerCount === 1 ? "" : "s"} • {formatMoney(topic.settlement.nextPoolAmount, currency)} carryover
+                        {topic.settlement.winnerNames.length > 0 && <span> • {topic.settlement.winnerNames.join(", ")}</span>}
+                      </div>
+                    ) : null}
+                  </div>
+                  {isAdmin ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {canLeagueAdminEditTopic(topic.status) && (
+                        <button
+                          type="button"
+                          onClick={() => editingTopicId === topic.id ? cancelEditingTopic() : startEditingTopic(topic)}
+                          disabled={changingTopicId === topic.id}
+                          className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
+                        >
+                          {editingTopicId === topic.id ? "Cancel" : "Edit"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleChangeTopicStatus(topic.id, "open")}
+                        disabled={changingTopicId === topic.id || !canLeagueAdminOpenTopic(topic.status)}
+                        className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
+                      >
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleChangeTopicStatus(topic.id, "closed")}
+                        disabled={changingTopicId === topic.id || !canLeagueAdminCloseTopic(topic.status)}
+                        className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {editingTopicId === topic.id ? (
+                  <div className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="Title"
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
+                    />
+                    <textarea
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      placeholder="Description"
+                      className="min-h-16 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
+                    />
+                    <input
+                      type="datetime-local"
+                      value={editCloseAt}
+                      onChange={(e) => setEditCloseAt(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveTopicEdit(topic.id)}
+                        disabled={savingEdit}
+                        className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {savingEdit ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditingTopic}
+                        className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {editStatus && <p className="text-xs text-rose-600">{editStatus}</p>}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* App admin: role management */}
+      {isAppAdmin ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Role management</p>
+          <div className="mt-4 space-y-3">
+            {snapshot.members.map((member) => (
+              <div key={member.userId} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 p-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-900">{member.displayName}{member.isCurrentUser ? " (you)" : ""}</p>
+                  <p className="text-xs text-zinc-500">{member.role === "admin" ? "league admin" : "player"}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleChangeLeagueRole(member.userId, "admin")}
+                    disabled={changingRoleUserId === member.userId || member.role === "admin"}
+                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
+                  >
+                    Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChangeLeagueRole(member.userId, "player")}
+                    disabled={changingRoleUserId === member.userId || member.role === "player"}
+                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
+                  >
+                    Player
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {roleStatus && <p className="mt-3 text-sm text-zinc-600">{roleStatus}</p>}
+        </div>
+      ) : null}
     </div>
   );
 }

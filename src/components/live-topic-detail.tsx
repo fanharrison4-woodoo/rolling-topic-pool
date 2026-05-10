@@ -8,30 +8,6 @@ import type { Topic } from "@/lib/types";
 
 interface LiveTopicDetailProps {
   topicId: string;
-  fallbackCurrency: string;
-  fallbackTopic: {
-    id: string;
-    order: number;
-    title: string;
-    description: string;
-    status: Topic["status"];
-    closeAt: string;
-    settlement: {
-      settledAt: string;
-      winnerCount: number;
-      payoutPerWinner: number;
-      nextPoolAmount: number;
-      resolutionNote: string | null;
-      winnerNames: string[];
-    } | null;
-    predictions: {
-      id: string;
-      displayName: string;
-      text: string;
-      updatedAt: string;
-      isWinner: boolean;
-    }[];
-  } | null;
 }
 
 interface TopicDetailState {
@@ -86,12 +62,12 @@ function statusTone(status: Topic["status"]) {
   }
 }
 
-export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: LiveTopicDetailProps) {
+export function LiveTopicDetail({ topicId }: LiveTopicDetailProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [topic, setTopic] = useState<TopicDetailState | null>(fallbackTopic);
-  const [currency, setCurrency] = useState(fallbackCurrency);
+  const [session, setSession] = useState<Session | null>(null);
+  const [topic, setTopic] = useState<TopicDetailState | null>(null);
+  const [currency, setCurrency] = useState("USD");
   const [loading, setLoading] = useState(Boolean(supabase));
-  const [usingLiveData, setUsingLiveData] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (activeSession: Session | null) => {
@@ -99,10 +75,9 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
       return;
     }
 
+    setSession(activeSession);
     if (!activeSession) {
-      setTopic(fallbackTopic);
-      setCurrency(fallbackCurrency);
-      setUsingLiveData(false);
+      setTopic(null);
       setLoading(false);
       return;
     }
@@ -120,7 +95,6 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
     const firstError = leagueResult.error ?? topicResult.error;
     if (firstError || !topicResult.data || !leagueResult.data) {
       setError(firstError?.message ?? "Topic not found");
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -137,7 +111,6 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
     const secondError = membershipResult.error ?? settlementResult.error;
     if (secondError) {
       setError(secondError.message);
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -149,7 +122,6 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
 
     if (profilesResult.error) {
       setError(profilesResult.error.message);
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -163,7 +135,6 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
       const winnerRowsResult = await supabase.from("settlement_winners").select("user_id").eq("settlement_id", settlement.id);
       if (winnerRowsResult.error) {
         setError(winnerRowsResult.error.message);
-        setUsingLiveData(false);
         setLoading(false);
         return;
       }
@@ -189,7 +160,6 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
 
     if (predictionsResult.error) {
       setError(predictionsResult.error.message);
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -211,9 +181,8 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
       })),
     });
     setCurrency(leagueResult.data.currency);
-    setUsingLiveData(true);
     setLoading(false);
-  }, [fallbackCurrency, fallbackTopic, supabase, topicId]);
+  }, [supabase, topicId]);
 
   useEffect(() => {
     if (!supabase) {
@@ -241,62 +210,83 @@ export function LiveTopicDetail({ topicId, fallbackCurrency, fallbackTopic }: Li
     };
   }, [load, supabase]);
 
+  if (!session && !loading) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center">
+        <p className="text-sm text-zinc-600">Sign in to view topic details.</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="h-8 w-2/3 animate-pulse rounded-xl bg-zinc-200" />
+        <div className="h-4 w-full animate-pulse rounded-xl bg-zinc-100" />
+      </div>
+    );
+  }
+
   if (!topic) {
-    return <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">Topic not found.</div>;
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600">
+        {error ?? "Topic not found."}
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-medium text-white">#{topic.order}</span>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(topic.status)}`}>{getTopicDisplayStatus(topic.status)}</span>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>{usingLiveData ? "Live from Supabase" : "Preview mode"}</span>
-          </div>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight">{topic.title}</h2>
-          <p className="mt-2 max-w-3xl text-zinc-600">{topic.description}</p>
-          <p className="mt-3 text-sm text-zinc-500">Closes {formatDate(topic.closeAt)}</p>
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-medium text-white">#{topic.order}</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(topic.status)}`}>{getTopicDisplayStatus(topic.status)}</span>
         </div>
+        <h2 className="mt-3 text-2xl font-semibold tracking-tight">{topic.title}</h2>
+        <p className="mt-2 text-zinc-600">{topic.description}</p>
+        <p className="mt-3 text-sm text-zinc-500">Closes {formatDate(topic.closeAt)}</p>
       </div>
 
-      {loading ? <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-600">Loading…</div> : null}
       {error ? <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
 
       {topic.settlement ? (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
-          <p className="font-medium uppercase tracking-[0.2em] text-sky-700">Settlement outcome</p>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl bg-white p-3">Winners: {topic.settlement.winnerCount}</div>
-            <div className="rounded-xl bg-white p-3">Payout each: {formatMoney(topic.settlement.payoutPerWinner, currency)}</div>
-            <div className="rounded-xl bg-white p-3">Next carryover: {formatMoney(topic.settlement.nextPoolAmount, currency)}</div>
-            <div className="rounded-xl bg-white p-3">Settled: {formatDate(topic.settlement.settledAt)}</div>
+          <p className="font-medium text-sky-700">Settlement outcome</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-lg bg-white p-2 text-xs">Winners: {topic.settlement.winnerCount}</div>
+            <div className="rounded-lg bg-white p-2 text-xs">Payout: {formatMoney(topic.settlement.payoutPerWinner, currency)}</div>
+            <div className="rounded-lg bg-white p-2 text-xs">Next pool: {formatMoney(topic.settlement.nextPoolAmount, currency)}</div>
+            <div className="rounded-lg bg-white p-2 text-xs">{formatDate(topic.settlement.settledAt)}</div>
           </div>
-          {topic.settlement.winnerNames.length > 0 ? <p className="mt-3">Winners: {topic.settlement.winnerNames.join(", ")}</p> : <p className="mt-3">No winners were selected. The pool rolled forward.</p>}
-          {topic.settlement.resolutionNote ? <p className="mt-2">Note: {topic.settlement.resolutionNote}</p> : null}
+          {topic.settlement.winnerNames.length > 0
+            ? <p className="mt-2 text-xs">Winners: {topic.settlement.winnerNames.join(", ")}</p>
+            : <p className="mt-2 text-xs">No winners — pool rolled forward.</p>}
+          {topic.settlement.resolutionNote && <p className="mt-1 text-xs">Note: {topic.settlement.resolutionNote}</p>}
         </div>
       ) : null}
 
-      <div className="rounded-2xl bg-zinc-50 p-5">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Predictions</p>
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Predictions</p>
         {canPlayersViewAllPredictions(topic.status) ? (
           <div className="mt-4 space-y-3">
             {topic.predictions.map((prediction) => (
-              <div key={prediction.id} className="rounded-xl border border-zinc-200 bg-white p-4">
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div key={prediction.id} className="rounded-xl border border-zinc-100 p-4">
+                <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-zinc-900">{prediction.displayName}</p>
                     <p className="mt-1 text-sm text-zinc-700">{prediction.text}</p>
-                    <p className="mt-1 text-xs text-zinc-500">Updated {formatDate(prediction.updatedAt)}</p>
+                    <p className="mt-1 text-xs text-zinc-400">Updated {formatDate(prediction.updatedAt)}</p>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${prediction.isWinner ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>{prediction.isWinner ? "Winner" : "Prediction"}</span>
+                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${prediction.isWinner ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>
+                    {prediction.isWinner ? "Winner" : "Prediction"}
+                  </span>
                 </div>
               </div>
             ))}
-            {topic.predictions.length === 0 ? <p className="text-sm text-zinc-600">No predictions recorded.</p> : null}
+            {topic.predictions.length === 0 && <p className="mt-2 text-sm text-zinc-500">No predictions recorded.</p>}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-zinc-600">Predictions stay hidden until the topic closes.</p>
+          <p className="mt-3 text-sm text-zinc-500">Predictions are hidden until the topic closes.</p>
         )}
       </div>
     </div>

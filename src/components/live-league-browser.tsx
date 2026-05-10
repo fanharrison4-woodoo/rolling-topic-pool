@@ -9,25 +9,6 @@ import type { Topic } from "@/lib/types";
 
 interface LiveLeagueBrowserProps {
   mode: "topics" | "history";
-  fallbackCurrency: string;
-  fallbackItems: {
-    id: string;
-    order: number;
-    title: string;
-    description: string;
-    status: Topic["status"];
-    closeAt: string;
-    predictionCount?: number;
-    playerCount?: number;
-    settlement?: {
-      settledAt: string;
-      winnerCount: number;
-      payoutPerWinner: number;
-      nextPoolAmount: number;
-      resolutionNote: string | null;
-      winnerNames: string[];
-    } | null;
-  }[];
 }
 
 interface BrowserItem {
@@ -77,18 +58,11 @@ function statusTone(status: Topic["status"]) {
   }
 }
 
-export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: LiveLeagueBrowserProps) {
+export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [, setSession] = useState<Session | null>(null);
-  const [items, setItems] = useState<BrowserItem[]>(
-    fallbackItems.map((item) => ({
-      ...item,
-      predictionCount: item.predictionCount ?? 0,
-      playerCount: item.playerCount ?? 0,
-      settlement: item.settlement ?? null,
-    })),
-  );
-  const [currency, setCurrency] = useState(fallbackCurrency);
+  const [session, setSession] = useState<Session | null>(null);
+  const [items, setItems] = useState<BrowserItem[]>([]);
+  const [currency, setCurrency] = useState("USD");
   const [loading, setLoading] = useState(Boolean(supabase));
   const [usingLiveData, setUsingLiveData] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,15 +74,7 @@ export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: Liv
 
     setSession(activeSession);
     if (!activeSession) {
-      setItems(
-        fallbackItems.map((item) => ({
-          ...item,
-          predictionCount: item.predictionCount ?? 0,
-          playerCount: item.playerCount ?? 0,
-          settlement: item.settlement ?? null,
-        })),
-      );
-      setCurrency(fallbackCurrency);
+      setItems([]);
       setUsingLiveData(false);
       setLoading(false);
       return;
@@ -232,7 +198,7 @@ export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: Liv
     setCurrency(leagueResult.data.currency);
     setUsingLiveData(true);
     setLoading(false);
-  }, [fallbackCurrency, fallbackItems, mode, supabase]);
+  }, [mode, supabase]);
 
   useEffect(() => {
     if (!supabase) {
@@ -261,28 +227,22 @@ export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: Liv
     };
   }, [load, supabase]);
 
-  return (
-    <div className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">{mode === "topics" ? "Topics" : "History"}</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            {mode === "topics"
-              ? "Browse every topic in order, including live prediction counts and settlement summaries."
-              : "Browse completed rounds and inspect the saved result details."}
-          </p>
-        </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-medium ${usingLiveData ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>
-          {usingLiveData ? "Live from Supabase" : "Preview mode"}
-        </span>
+  if (!session && !loading) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center">
+        <p className="text-sm text-zinc-600">Sign in to see {mode === "topics" ? "topics" : "history"}.</p>
       </div>
+    );
+  }
 
-      {loading ? <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-600">Loading…</div> : null}
-      {error ? <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
+  return (
+    <div className="space-y-4">
+      {loading ? <div className="rounded-xl bg-zinc-100 p-4 text-sm text-zinc-600">Loading…</div> : null}
+      {error ? <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {items.map((item) => (
-          <div key={item.id} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
+          <div key={item.id} className="rounded-2xl border border-zinc-200 bg-white p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -321,7 +281,7 @@ export function LiveLeagueBrowser({ mode, fallbackCurrency, fallbackItems }: Liv
         ))}
 
         {!loading && items.length === 0 ? (
-          <div className="rounded-2xl bg-zinc-50 p-5 text-sm text-zinc-600">
+          <div className="rounded-xl bg-zinc-50 p-5 text-sm text-zinc-600">
             {mode === "topics" ? "No topics yet." : "No settled topics yet."}
           </div>
         ) : null}

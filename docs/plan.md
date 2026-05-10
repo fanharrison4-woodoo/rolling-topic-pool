@@ -222,3 +222,24 @@ Constraint:
 - invite flow
 - commit SHA in footer
 - hide others’ predictions before lock if desired
+
+---
+
+## UI feedback backlog (Phase 3 follow-up)
+
+These were captured after first live deployment.
+
+### UI-1 — Auth to top-right account button
+Move auth status out of the page body. Add a sticky header with a top-right account button. Signed-in: avatar/initials opens a dropdown with email and sign-out. Signed-out: "Sign in" button opens a dropdown with the Google + magic-link form.
+
+### UI-2 — Remove all mock/fake data
+All pages currently fall back to hardcoded mock data when the user is not signed in. This confuses testing. Remove mock fallbacks from every page and component. Show a "sign in to continue" placeholder instead for unauthenticated visitors.
+
+### UI-3 — Mobile-friendly layout
+Ensure all pages are usable on mobile: single-column content, touch-friendly tap targets, sticky header that works at small widths.
+
+### UI-4 — Fix top-level navigation visibility
+The site nav links are not legible (reported as white-on-white). Fix by redesigning as part of the new sticky header (UI-1). Clear background, dark text, legible in all contexts.
+
+### UI-5 — Single-column page layout
+All pages should be one column (max-width ~2xl, centered). Remove the multi-column aside layout from the home page and other pages.
