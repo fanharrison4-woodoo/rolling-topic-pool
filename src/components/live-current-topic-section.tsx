@@ -124,7 +124,9 @@ export function LiveCurrentTopicSection({
   const [roleStatus, setRoleStatus] = useState<string | null>(null);
   const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
   const [changingTopicId, setChangingTopicId] = useState<string | null>(null);
-  const [winnerCountDraft, setWinnerCountDraft] = useState("1");
+  const [selectedWinnerUserIds, setSelectedWinnerUserIds] = useState<string[]>([]);
+  const [resolutionNote, setResolutionNote] = useState("");
+  const [settlingTopic, setSettlingTopic] = useState(false);
 
   const loadLiveState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) {
@@ -331,6 +333,8 @@ export function LiveCurrentTopicSection({
 
     setSnapshot(nextSnapshot);
     setDraft(livePrediction?.text ?? "");
+    setSelectedWinnerUserIds([]);
+    setResolutionNote("");
     setLoading(false);
   }, [fallbackUserPrediction?.text, supabase]);
 
@@ -609,6 +613,90 @@ export function LiveCurrentTopicSection({
     setChangingTopicId(null);
   }
 
+  function toggleWinnerSelection(userId: string) {
+    setSelectedWinnerUserIds((current) =>
+      current.includes(userId) ? current.filter((entry) => entry !== userId) : [...current, userId],
+    );
+  }
+
+  async function handleSettleCurrentTopic() {
+    if (!supabase || !session || !snapshot?.currentTopic || !canJudgeCurrentTopic || settlingTopic) {
+      return;
+    }
+
+    const winnerCount = selectedWinnerUserIds.length;
+    const settlement = computeSettlement({
+      carryoverAmount: snapshot.carryover,
+      stakeAmount: snapshot.league.stakeAmount,
+      playerCount: snapshot.league.playerCount,
+      winnerCount,
+    });
+
+    setSettlingTopic(true);
+    setTopicStatus(null);
+    setError(null);
+
+    const settlementInsert = await supabase
+      .from("settlements")
+      .insert({
+        topic_id: snapshot.currentTopic.id,
+        previous_pool_amount: snapshot.carryover,
+        contribution_amount: settlement.contributionAmount,
+        total_pool_amount: settlement.totalPoolAmount,
+        winner_count: winnerCount,
+        payout_per_winner: settlement.payoutPerWinner,
+        next_pool_amount: settlement.nextCarryoverAmount,
+        resolution_note: resolutionNote.trim() || null,
+        settled_by: session.user.id,
+      })
+      .select("id")
+      .single();
+
+    if (settlementInsert.error) {
+      setTopicStatus(settlementInsert.error.message);
+      setSettlingTopic(false);
+      return;
+    }
+
+    const settlementId = settlementInsert.data.id;
+
+    if (selectedWinnerUserIds.length > 0) {
+      const winnersInsert = await supabase.from("settlement_winners").insert(
+        selectedWinnerUserIds.map((userId) => ({
+          settlement_id: settlementId,
+          user_id: userId,
+        })),
+      );
+
+      if (winnersInsert.error) {
+        await supabase.from("settlements").delete().eq("id", settlementId);
+        setTopicStatus(winnersInsert.error.message);
+        setSettlingTopic(false);
+        return;
+      }
+    }
+
+    const topicUpdate = await supabase
+      .from("topics")
+      .update({ status: "settled" })
+      .eq("id", snapshot.currentTopic.id);
+
+    if (topicUpdate.error) {
+      await supabase.from("settlements").delete().eq("id", settlementId);
+      setTopicStatus(topicUpdate.error.message);
+      setSettlingTopic(false);
+      return;
+    }
+
+    await loadLiveState(session);
+    setTopicStatus(
+      winnerCount > 0
+        ? `Topic settled. ${winnerCount} winner${winnerCount === 1 ? "" : "s"} recorded.`
+        : "Topic settled with no winners. Full pool carried forward.",
+    );
+    setSettlingTopic(false);
+  }
+
   async function handleChangeLeagueRole(userId: string, role: "admin" | "player") {
     if (!supabase || !session || !snapshot || !snapshot.league.viewerIsAppAdmin) {
       return;
@@ -672,12 +760,13 @@ export function LiveCurrentTopicSection({
   const canJudgeCurrentTopic = Boolean(snapshot?.currentTopic && canLeagueAdminDeclareWinners(snapshot.currentTopic.status));
   const liveTopics = snapshot?.topics ?? [];
   const currentTopicPredictions = snapshot?.topicPredictions ?? [];
+  const selectedWinnerCount = selectedWinnerUserIds.length;
   const settlementPreview = snapshot
     ? computeSettlement({
         carryoverAmount: snapshot.carryover,
         stakeAmount: snapshot.league.stakeAmount,
         playerCount: snapshot.league.playerCount,
-        winnerCount: Math.max(0, Number.parseInt(winnerCountDraft || "0", 10) || 0),
+        winnerCount: selectedWinnerCount,
       })
     : null;
 
@@ -827,18 +916,29 @@ export function LiveCurrentTopicSection({
 
               {canJudgeCurrentTopic && settlementPreview ? (
                 <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-                  <p className="font-medium text-zinc-900">Closed topic settlement preview</p>
-                  <p className="mt-1 text-sm text-zinc-600">This previews the pool result for the current closed topic before the full winner-selection flow is built.</p>
+                  <p className="font-medium text-zinc-900">Settle current closed topic</p>
+                  <p className="mt-1 text-sm text-zinc-600">Select the winning players below, add an optional note, then persist the settlement.</p>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <div>
-                      <label className="text-sm font-medium text-zinc-700">Winner count</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={winnerCountDraft}
-                        onChange={(event) => setWinnerCountDraft(event.target.value)}
-                        className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                      <p className="text-sm font-medium text-zinc-700">Selected winners</p>
+                      <div className="mt-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+                        {selectedWinnerCount}
+                      </div>
+                      <label className="mt-3 block text-sm font-medium text-zinc-700">Resolution note</label>
+                      <textarea
+                        value={resolutionNote}
+                        onChange={(event) => setResolutionNote(event.target.value)}
+                        placeholder="Optional note about the result or tie-break"
+                        className="mt-2 min-h-24 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
                       />
+                      <button
+                        type="button"
+                        onClick={handleSettleCurrentTopic}
+                        disabled={settlingTopic}
+                        className="mt-3 rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {settlingTopic ? "Settling topic..." : "Settle topic"}
+                      </button>
                     </div>
                     <div className="grid gap-2 text-sm text-zinc-700">
                       <div className="rounded-xl bg-white p-3">Contribution: {formatMoney(settlementPreview.contributionAmount, displayLeague.currency)}</div>
@@ -1032,13 +1132,31 @@ export function LiveCurrentTopicSection({
           <div className="mt-4 rounded-2xl bg-white p-4">
             <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">Visible predictions</p>
             <div className="mt-3 space-y-3">
-              {currentTopicPredictions.map((prediction) => (
-                <div key={prediction.id} className="rounded-xl border border-zinc-200 p-3">
-                  <p className="font-medium text-zinc-900">{prediction.displayName}</p>
-                  <p className="mt-1 text-sm text-zinc-700">{prediction.predictionText}</p>
-                  <p className="mt-1 text-xs text-zinc-500">Updated {formatDate(prediction.updatedAt)}</p>
-                </div>
-              ))}
+              {currentTopicPredictions.map((prediction) => {
+                const isSelectedWinner = selectedWinnerUserIds.includes(prediction.userId);
+                return (
+                  <div key={prediction.id} className="rounded-xl border border-zinc-200 p-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="font-medium text-zinc-900">{prediction.displayName}</p>
+                        <p className="mt-1 text-sm text-zinc-700">{prediction.predictionText}</p>
+                        <p className="mt-1 text-xs text-zinc-500">Updated {formatDate(prediction.updatedAt)}</p>
+                      </div>
+                      {canJudgeCurrentTopic ? (
+                        <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
+                          <input
+                            type="checkbox"
+                            checked={isSelectedWinner}
+                            onChange={() => toggleWinnerSelection(prediction.userId)}
+                            disabled={settlingTopic}
+                          />
+                          Winner
+                        </label>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}
