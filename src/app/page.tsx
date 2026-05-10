@@ -10,6 +10,7 @@ import {
 } from "@/lib/mock-data";
 import { AuthStatusCard } from "@/components/auth-status-card";
 import { LiveCurrentTopicSection } from "@/components/live-current-topic-section";
+import { SiteNav } from "@/components/site-nav";
 import { getSupabasePublicEnv } from "@/lib/env";
 import { getTopicDisplayStatus } from "@/lib/topic-rules";
 import { Prediction, Topic } from "@/lib/types";
@@ -93,6 +94,9 @@ export default function Home() {
     <main className="min-h-screen bg-zinc-50 text-zinc-950">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-10 lg:px-10">
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-zinc-950 via-zinc-900 to-sky-900 p-8 text-white shadow-xl">
+          <div className="mb-6 flex justify-end">
+            <SiteNav />
+          </div>
           <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-4">
               <p className="text-sm uppercase tracking-[0.25em] text-sky-200">PoolChain MVP</p>
