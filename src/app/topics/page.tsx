@@ -1,4 +1,4 @@
-import { LiveLeagueBrowser } from "@/components/live-league-browser";
+import { LiveCircleBrowser } from "@/components/live-circle-browser";
 
 export default function TopicsPage() {
   return (
@@ -7,7 +7,7 @@ export default function TopicsPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">Topics</h1>
         <p className="mt-1 text-sm text-zinc-500">All rounds in order — open, closed, and settled.</p>
       </div>
-      <LiveLeagueBrowser mode="topics" />
+      <LiveCircleBrowser mode="topics" />
     </main>
   );
 }

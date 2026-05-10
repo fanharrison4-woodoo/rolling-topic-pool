@@ -113,10 +113,10 @@ function statusTone(status: Topic["status"]) {
 }
 
 interface LiveCurrentTopicSectionProps {
-  leagueId: string;
+  circleId: string;
 }
 
-export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionProps) {
+export function LiveCurrentTopicSection({ circleId }: LiveCurrentTopicSectionProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(() => Boolean(supabase));
@@ -163,7 +163,7 @@ export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionPro
     const leagueResult = await supabase
       .from("leagues")
       .select("id, name, stake_amount, currency")
-      .eq("id", leagueId)
+      .eq("id", circleId)
       .maybeSingle();
 
     if (leagueResult.error) {
@@ -411,7 +411,7 @@ export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionPro
     setSelectedWinnerUserIds([]);
     setResolutionNote("");
     setLoading(false);
-  }, [leagueId, supabase]);
+  }, [circleId, supabase]);
 
   useEffect(() => {
     if (!supabase) {
@@ -462,7 +462,7 @@ export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionPro
     }
 
     await loadLiveState(session);
-    setSaveStatus("You joined the league. You can submit predictions now.");
+    setSaveStatus("You joined the circle. You can submit predictions now.");
     setJoining(false);
   }
 
@@ -868,7 +868,7 @@ export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionPro
 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl bg-zinc-50 p-3">
-              <p className="text-xs text-zinc-500">League</p>
+              <p className="text-xs text-zinc-500">Circle</p>
               <p className="mt-1 text-sm font-medium">{snapshot.league.name}</p>
             </div>
             <div className="rounded-xl bg-zinc-50 p-3">
@@ -936,7 +936,7 @@ export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionPro
             disabled={joining}
             className="shrink-0 rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {joining ? "Joining…" : "Join league"}
+            {joining ? "Joining…" : "Join circle"}
           </button>
         </div>
       ) : null}

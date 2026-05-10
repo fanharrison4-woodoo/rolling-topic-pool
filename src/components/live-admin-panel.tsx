@@ -124,7 +124,7 @@ export function LiveAdminPanel() {
     setMembers((prev) =>
       prev.map((m) => (m.memberId === memberId ? { ...m, role } : m)),
     );
-    setStatusMsg(role === "admin" ? "Promoted to league admin." : "Changed to player.");
+    setStatusMsg(role === "admin" ? "Promoted to circle admin." : "Changed to player.");
     setChangingId(null);
   }
 
@@ -140,7 +140,7 @@ export function LiveAdminPanel() {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600">
         You do not have permission to access this page.{" "}
-        <Link href="/leagues" className="underline">Go to Leagues</Link>
+        <Link href="/circles" className="underline">Go to Circles</Link>
       </div>
     );
   }
@@ -185,7 +185,7 @@ export function LiveAdminPanel() {
                   <p className="text-sm font-medium text-zinc-900">
                     {m.displayName}{m.isCurrentUser ? " (you)" : ""}
                   </p>
-                  <p className="text-xs text-zinc-500">{m.role === "admin" ? "league admin" : "player"}</p>
+                  <p className="text-xs text-zinc-500">{m.role === "admin" ? "circle admin" : "player"}</p>
                 </div>
                 <div className="flex gap-2">
                   <button

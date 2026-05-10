@@ -7,7 +7,7 @@ import type { Session } from "@supabase/supabase-js";
 import { isAppAdminEmail } from "@/lib/app-admins";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 
-interface LeagueEntry {
+interface CircleEntry {
   id: string;
   name: string;
   stakeAmount: number;
@@ -17,7 +17,7 @@ interface LeagueEntry {
   playerCount: number;
 }
 
-type CreateStep = "idle" | "league" | "topic";
+type CreateStep = "idle" | "circle" | "topic";
 
 function formatMoney(amount: number, currency: string) {
   return new Intl.NumberFormat("en-US", {
@@ -27,44 +27,44 @@ function formatMoney(amount: number, currency: string) {
   }).format(amount);
 }
 
-function LeagueCard({ league }: { league: LeagueEntry }) {
+function CircleCard({ circle }: { circle: CircleEntry }) {
   return (
     <Link
-      href={`/leagues/${league.id}`}
+      href={`/circles/${circle.id}`}
       className="block rounded-2xl border border-zinc-200 bg-white p-5 transition hover:border-zinc-400"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-semibold text-zinc-900">{league.name}</p>
+          <p className="font-semibold text-zinc-900">{circle.name}</p>
           <p className="mt-1 text-sm text-zinc-500">
-            {league.playerCount} player{league.playerCount === 1 ? "" : "s"} · {league.topicCount} topic{league.topicCount === 1 ? "" : "s"} · stake {formatMoney(league.stakeAmount, league.currency)}
+            {circle.playerCount} player{circle.playerCount === 1 ? "" : "s"} · {circle.topicCount} topic{circle.topicCount === 1 ? "" : "s"} · stake {formatMoney(circle.stakeAmount, circle.currency)}
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700">
-          {league.role === "admin" ? "Admin" : "Player"}
+          {circle.role === "admin" ? "Admin" : "Player"}
         </span>
       </div>
     </Link>
   );
 }
 
-export function LiveLeagueList() {
+export function LiveCircleList() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
-  const [leagues, setLeagues] = useState<LeagueEntry[]>([]);
+  const [circles, setCircles] = useState<CircleEntry[]>([]);
   const [loading, setLoading] = useState(Boolean(supabase));
   const [error, setError] = useState<string | null>(null);
   const [isAppAdmin, setIsAppAdmin] = useState(false);
 
-  // Create league form state
+  // Create circle form state
   const [createStep, setCreateStep] = useState<CreateStep>("idle");
-  const [leagueName, setLeagueName] = useState("");
+  const [circleName, setCircleName] = useState("");
   const [stakeAmount, setStakeAmount] = useState("5");
   const [currency, setCurrency] = useState("USD");
-  const [creatingLeague, setCreatingLeague] = useState(false);
-  const [newLeagueId, setNewLeagueId] = useState<string | null>(null);
-  const [createLeagueError, setCreateLeagueError] = useState<string | null>(null);
+  const [creatingCircle, setCreatingCircle] = useState(false);
+  const [newCircleId, setNewCircleId] = useState<string | null>(null);
+  const [createCircleError, setCreateCircleError] = useState<string | null>(null);
 
   // First topic form state
   const [topicTitle, setTopicTitle] = useState("");
@@ -78,7 +78,7 @@ export function LiveLeagueList() {
 
     setSession(activeSession);
     if (!activeSession) {
-      setLeagues([]);
+      setCircles([]);
       setLoading(false);
       return;
     }
@@ -100,15 +100,15 @@ export function LiveLeagueList() {
     }
 
     const rows = membershipsResult.data ?? [];
-    const leagueIds = rows.map((r) => (r.leagues as unknown as { id: string } | null)?.id).filter(Boolean) as string[];
+    const circleIds = rows.map((r) => (r.leagues as unknown as { id: string } | null)?.id).filter(Boolean) as string[];
 
     let topicCounts = new Map<string, number>();
     let playerCounts = new Map<string, number>();
 
-    if (leagueIds.length > 0) {
+    if (circleIds.length > 0) {
       const [topicsResult, membersResult] = await Promise.all([
-        supabase.from("topics").select("league_id").in("league_id", leagueIds),
-        supabase.from("league_members").select("league_id").in("league_id", leagueIds).eq("is_active", true),
+        supabase.from("topics").select("league_id").in("league_id", circleIds),
+        supabase.from("league_members").select("league_id").in("league_id", circleIds).eq("is_active", true),
       ]);
 
       for (const t of topicsResult.data ?? []) {
@@ -119,7 +119,7 @@ export function LiveLeagueList() {
       }
     }
 
-    const entries: LeagueEntry[] = rows
+    const entries: CircleEntry[] = rows
       .map((r) => {
         const lg = r.leagues as unknown as { id: string; name: string; stake_amount: number; currency: string } | null;
         if (!lg) return null;
@@ -133,13 +133,13 @@ export function LiveLeagueList() {
           playerCount: playerCounts.get(lg.id) ?? 0,
         };
       })
-      .filter((e): e is LeagueEntry => e !== null);
+      .filter((e): e is CircleEntry => e !== null);
 
-    setLeagues(entries);
+    setCircles(entries);
     setLoading(false);
 
     if (entries.length === 1) {
-      router.replace(`/leagues/${entries[0].id}`);
+      router.replace(`/circles/${entries[0].id}`);
     }
   }, [supabase, router]);
 
@@ -162,37 +162,37 @@ export function LiveLeagueList() {
     };
   }, [load, supabase]);
 
-  async function handleCreateLeague() {
+  async function handleCreateCircle() {
     if (!supabase || !session) return;
 
-    const name = leagueName.trim();
+    const name = circleName.trim();
     const stake = parseFloat(stakeAmount);
 
-    if (!name) { setCreateLeagueError("League name is required."); return; }
-    if (isNaN(stake) || stake <= 0) { setCreateLeagueError("Stake must be a positive number."); return; }
+    if (!name) { setCreateCircleError("Circle name is required."); return; }
+    if (isNaN(stake) || stake <= 0) { setCreateCircleError("Stake must be a positive number."); return; }
 
-    setCreatingLeague(true);
-    setCreateLeagueError(null);
+    setCreatingCircle(true);
+    setCreateCircleError(null);
 
-    const { data: leagueId, error: rpcError } = await supabase.rpc("bootstrap_league", {
+    const { data: circleId, error: rpcError } = await supabase.rpc("bootstrap_league", {
       league_name: name,
       stake,
       league_currency: currency,
     });
 
     if (rpcError) {
-      setCreateLeagueError(rpcError.message);
-      setCreatingLeague(false);
+      setCreateCircleError(rpcError.message);
+      setCreatingCircle(false);
       return;
     }
 
-    setNewLeagueId(leagueId as string);
-    setCreatingLeague(false);
+    setNewCircleId(circleId as string);
+    setCreatingCircle(false);
     setCreateStep("topic");
   }
 
   async function handleCreateFirstTopic() {
-    if (!supabase || !session || !newLeagueId) return;
+    if (!supabase || !session || !newCircleId) return;
 
     const title = topicTitle.trim();
     if (!title) { setCreateTopicError("Topic title is required."); return; }
@@ -202,7 +202,7 @@ export function LiveLeagueList() {
     setCreateTopicError(null);
 
     const { error: insertError } = await supabase.from("topics").insert({
-      league_id: newLeagueId,
+      league_id: newCircleId,
       order_index: 1,
       title,
       description: topicDescription.trim() || null,
@@ -218,13 +218,13 @@ export function LiveLeagueList() {
       return;
     }
 
-    router.push(`/leagues/${newLeagueId}`);
+    router.push(`/circles/${newCircleId}`);
   }
 
   if (!session && !loading) {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center">
-        <p className="text-sm text-zinc-600">Sign in to see your leagues.</p>
+        <p className="text-sm text-zinc-600">Sign in to see your circles.</p>
       </div>
     );
   }
@@ -238,17 +238,17 @@ export function LiveLeagueList() {
     );
   }
 
-  if (createStep === "league") {
+  if (createStep === "circle") {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-6">
-        <p className="font-semibold text-zinc-900">Create a league</p>
-        <p className="mt-1 text-sm text-zinc-500">You'll become the league admin and can invite others.</p>
+        <p className="font-semibold text-zinc-900">Create a circle</p>
+        <p className="mt-1 text-sm text-zinc-500">You'll become the circle admin and can invite others.</p>
         <div className="mt-5 space-y-3">
           <input
             type="text"
-            value={leagueName}
-            onChange={(e) => setLeagueName(e.target.value)}
-            placeholder="League name"
+            value={circleName}
+            onChange={(e) => setCircleName(e.target.value)}
+            placeholder="Circle name"
             className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none"
           />
           <div className="flex gap-3">
@@ -274,19 +274,19 @@ export function LiveLeagueList() {
               <option value="JPY">JPY</option>
             </select>
           </div>
-          {createLeagueError && <p className="text-sm text-rose-600">{createLeagueError}</p>}
+          {createCircleError && <p className="text-sm text-rose-600">{createCircleError}</p>}
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={handleCreateLeague}
-              disabled={creatingLeague}
+              onClick={handleCreateCircle}
+              disabled={creatingCircle}
               className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {creatingLeague ? "Creating…" : "Continue"}
+              {creatingCircle ? "Creating…" : "Continue"}
             </button>
             <button
               type="button"
-              onClick={() => { setCreateStep("idle"); setCreateLeagueError(null); }}
+              onClick={() => { setCreateStep("idle"); setCreateCircleError(null); }}
               className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700"
             >
               Cancel
@@ -301,7 +301,7 @@ export function LiveLeagueList() {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-6">
         <p className="font-semibold text-zinc-900">Create the first topic</p>
-        <p className="mt-1 text-sm text-zinc-500">Every league needs at least one topic to get started.</p>
+        <p className="mt-1 text-sm text-zinc-500">Every circle needs at least one topic to get started.</p>
         <div className="mt-5 space-y-3">
           <input
             type="text"
@@ -333,7 +333,7 @@ export function LiveLeagueList() {
               disabled={creatingTopic}
               className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {creatingTopic ? "Creating…" : "Create topic & open league"}
+              {creatingTopic ? "Creating…" : "Create topic & open circle"}
             </button>
           </div>
         </div>
@@ -341,9 +341,9 @@ export function LiveLeagueList() {
     );
   }
 
-  const adminLeagues = leagues.filter((l) => l.role === "admin");
-  const playerLeagues = leagues.filter((l) => l.role === "player");
-  const hasAdminRole = adminLeagues.length > 0;
+  const adminCircles = circles.filter((c) => c.role === "admin");
+  const playerCircles = circles.filter((c) => c.role === "player");
+  const hasAdminRole = adminCircles.length > 0;
 
   return (
     <div className="space-y-6">
@@ -351,31 +351,31 @@ export function LiveLeagueList() {
 
       {hasAdminRole && (
         <div>
-          <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Leagues I manage</p>
+          <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Circles I manage</p>
           <div className="space-y-3">
-            {adminLeagues.map((league) => (
-              <LeagueCard key={league.id} league={league} />
+            {adminCircles.map((circle) => (
+              <CircleCard key={circle.id} circle={circle} />
             ))}
           </div>
         </div>
       )}
 
-      {playerLeagues.length > 0 && (
+      {playerCircles.length > 0 && (
         <div>
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
-            {hasAdminRole ? "Leagues I play in" : "My leagues"}
+            {hasAdminRole ? "Circles I play in" : "My circles"}
           </p>
           <div className="space-y-3">
-            {playerLeagues.map((league) => (
-              <LeagueCard key={league.id} league={league} />
+            {playerCircles.map((circle) => (
+              <CircleCard key={circle.id} circle={circle} />
             ))}
           </div>
         </div>
       )}
 
-      {leagues.length === 0 && (
+      {circles.length === 0 && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600">
-          You are not in any league yet.
+          You are not in any circle yet.
         </div>
       )}
 
@@ -383,10 +383,10 @@ export function LiveLeagueList() {
         <div>
           <button
             type="button"
-            onClick={() => setCreateStep("league")}
+            onClick={() => setCreateStep("circle")}
             className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white"
           >
-            Create a league
+            Create a circle
           </button>
         </div>
       )}

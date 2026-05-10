@@ -5,7 +5,7 @@ export default function AdminPage() {
     <main className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">Admin</h1>
-        <p className="mt-1 text-sm text-zinc-500">Global role management across all leagues.</p>
+        <p className="mt-1 text-sm text-zinc-500">Global role management across all circles.</p>
       </div>
       <LiveAdminPanel />
     </main>

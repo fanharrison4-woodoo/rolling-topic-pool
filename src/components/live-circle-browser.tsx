@@ -7,7 +7,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase";
 import { getTopicDisplayStatus } from "@/lib/topic-rules";
 import type { Topic } from "@/lib/types";
 
-interface LiveLeagueBrowserProps {
+interface LiveCircleBrowserProps {
   mode: "topics" | "history";
 }
 
@@ -58,24 +58,20 @@ function statusTone(status: Topic["status"]) {
   }
 }
 
-export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
+export function LiveCircleBrowser({ mode }: LiveCircleBrowserProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [items, setItems] = useState<BrowserItem[]>([]);
   const [currency, setCurrency] = useState("USD");
   const [loading, setLoading] = useState(Boolean(supabase));
-  const [usingLiveData, setUsingLiveData] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (activeSession: Session | null) => {
-    if (!supabase) {
-      return;
-    }
+    if (!supabase) return;
 
     setSession(activeSession);
     if (!activeSession) {
       setItems([]);
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -85,8 +81,7 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
 
     const leagueResult = await supabase.from("leagues").select("id, currency").limit(1).maybeSingle();
     if (leagueResult.error || !leagueResult.data) {
-      setError(leagueResult.error?.message ?? "No league found");
-      setUsingLiveData(false);
+      setError(leagueResult.error?.message ?? "No circle found");
       setLoading(false);
       return;
     }
@@ -104,7 +99,6 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
     const firstError = membersResult.error ?? topicsResult.error;
     if (firstError) {
       setError(firstError.message);
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -112,7 +106,7 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
     const topicIds = (topicsResult.data ?? []).map((topic) => topic.id);
     const [predictionsResult, settlementsResult] = await Promise.all([
       topicIds.length > 0
-        ? supabase.from("predictions").select("topic_id") .in("topic_id", topicIds)
+        ? supabase.from("predictions").select("topic_id").in("topic_id", topicIds)
         : Promise.resolve({ data: [], error: null }),
       topicIds.length > 0
         ? supabase
@@ -125,7 +119,6 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
     const secondError = predictionsResult.error ?? settlementsResult.error;
     if (secondError) {
       setError(secondError.message);
-      setUsingLiveData(false);
       setLoading(false);
       return;
     }
@@ -143,7 +136,6 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
       const winnerRowsResult = await supabase.from("settlement_winners").select("settlement_id, user_id").in("settlement_id", settlementIds);
       if (winnerRowsResult.error) {
         setError(winnerRowsResult.error.message);
-        setUsingLiveData(false);
         setLoading(false);
         return;
       }
@@ -155,7 +147,6 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
 
       if (profilesResult.error) {
         setError(profilesResult.error.message);
-        setUsingLiveData(false);
         setLoading(false);
         return;
       }
@@ -196,29 +187,20 @@ export function LiveLeagueBrowser({ mode }: LiveLeagueBrowserProps) {
 
     setItems(mode === "history" ? nextItems.filter((item) => getTopicDisplayStatus(item.status) === "settled") : nextItems);
     setCurrency(leagueResult.data.currency);
-    setUsingLiveData(true);
     setLoading(false);
   }, [mode, supabase]);
 
   useEffect(() => {
-    if (!supabase) {
-      return;
-    }
+    if (!supabase) return;
 
     let isMounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
-      if (isMounted) {
-        void load(data.session ?? null);
-      }
+      if (isMounted) void load(data.session ?? null);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (isMounted) {
-        void load(nextSession ?? null);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (isMounted) void load(nextSession ?? null);
     });
 
     return () => {
