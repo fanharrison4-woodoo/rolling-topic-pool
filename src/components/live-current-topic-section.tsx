@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isAppAdminEmail } from "@/lib/app-admins";
@@ -111,7 +112,11 @@ function statusTone(status: Topic["status"]) {
   }
 }
 
-export function LiveCurrentTopicSection() {
+interface LiveCurrentTopicSectionProps {
+  leagueId: string;
+}
+
+export function LiveCurrentTopicSection({ leagueId }: LiveCurrentTopicSectionProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(() => Boolean(supabase));
@@ -120,15 +125,12 @@ export function LiveCurrentTopicSection() {
   const [draft, setDraft] = useState("");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [bootstrapping, setBootstrapping] = useState(false);
   const [joining, setJoining] = useState(false);
   const [creatingTopic, setCreatingTopic] = useState(false);
   const [topicTitle, setTopicTitle] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
   const [topicCloseAt, setTopicCloseAt] = useState("");
   const [topicStatus, setTopicStatus] = useState<string | null>(null);
-  const [roleStatus, setRoleStatus] = useState<string | null>(null);
-  const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null);
   const [changingTopicId, setChangingTopicId] = useState<string | null>(null);
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -161,7 +163,7 @@ export function LiveCurrentTopicSection() {
     const leagueResult = await supabase
       .from("leagues")
       .select("id, name, stake_amount, currency")
-      .limit(1)
+      .eq("id", leagueId)
       .maybeSingle();
 
     if (leagueResult.error) {
@@ -172,8 +174,8 @@ export function LiveCurrentTopicSection() {
     }
 
     if (!leagueResult.data) {
+      setError("League not found.");
       setSnapshot(null);
-      setDraft("");
       setLoading(false);
       return;
     }
@@ -181,7 +183,7 @@ export function LiveCurrentTopicSection() {
     const league = leagueResult.data;
     const viewerIsAppAdmin = isAppAdminEmail(activeSession.user.email);
 
-    const [membersResult, membershipResult, topicsResult, settlementResult] = await Promise.all([
+    const [membersResult, membershipResult, topicsResult] = await Promise.all([
       supabase
         .from("league_members")
         .select("user_id, role, is_active")
@@ -198,15 +200,9 @@ export function LiveCurrentTopicSection() {
         .select("id, title, description, status, close_at, order_index")
         .eq("league_id", league.id)
         .order("order_index", { ascending: true }),
-      supabase
-        .from("settlements")
-        .select("next_pool_amount, settled_at")
-        .order("settled_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
     ]);
 
-    const firstError = membersResult.error ?? membershipResult.error ?? topicsResult.error ?? settlementResult.error;
+    const firstError = membersResult.error ?? membershipResult.error ?? topicsResult.error;
     if (firstError) {
       setError(firstError.message);
       setSnapshot(null);
@@ -254,6 +250,7 @@ export function LiveCurrentTopicSection() {
 
     const topicIds = (topicsResult.data ?? []).map((topic) => topic.id);
     let settlementByTopicId = new Map<string, NonNullable<LiveSnapshot["currentTopicSettlement"]>>();
+    let latestSettlementCarryover = 0;
 
     if (topicIds.length > 0) {
       const settlementsForTopicsResult = await supabase
@@ -269,6 +266,10 @@ export function LiveCurrentTopicSection() {
       }
 
       const settlementRows = settlementsForTopicsResult.data ?? [];
+      const sortedSettlements = [...settlementRows].sort(
+        (a, b) => new Date(b.settled_at).getTime() - new Date(a.settled_at).getTime(),
+      );
+      latestSettlementCarryover = Number(sortedSettlements[0]?.next_pool_amount ?? 0);
       const settlementIds = settlementRows.map((row) => row.id);
       const winnerNamesBySettlementId = new Map<string, string[]>();
 
@@ -360,7 +361,7 @@ export function LiveCurrentTopicSection() {
 
     const playerCount = membersResult.data?.length ?? 0;
     const stakeAmount = Number(league.stake_amount ?? 0);
-    const carryover = Number(settlementResult.data?.next_pool_amount ?? 0);
+    const carryover = latestSettlementCarryover;
     const contribution = stakeAmount * playerCount;
     const nextSnapshot: LiveSnapshot = {
       league: {
@@ -410,7 +411,7 @@ export function LiveCurrentTopicSection() {
     setSelectedWinnerUserIds([]);
     setResolutionNote("");
     setLoading(false);
-  }, [supabase]);
+  }, [leagueId, supabase]);
 
   useEffect(() => {
     if (!supabase) {
@@ -440,50 +441,6 @@ export function LiveCurrentTopicSection() {
       subscription.unsubscribe();
     };
   }, [loadLiveState, supabase]);
-
-  async function handleBootstrap() {
-    if (!supabase || !session) {
-      return;
-    }
-
-    setBootstrapping(true);
-    setError(null);
-    setSaveStatus(null);
-
-    const { data: existingLeague, error: existingLeagueError } = await supabase
-      .from("leagues")
-      .select("id, name")
-      .limit(1)
-      .maybeSingle();
-
-    if (existingLeagueError) {
-      setError(existingLeagueError.message);
-      setBootstrapping(false);
-      return;
-    }
-
-    let leagueId = existingLeague?.id ?? null;
-
-    if (!leagueId) {
-      const { data: bootstrappedLeagueId, error: bootstrapError } = await supabase.rpc("bootstrap_league", {
-        league_name: "My Pool",
-        stake: 5,
-        league_currency: "USD",
-      });
-
-      if (bootstrapError) {
-        setError(bootstrapError.message);
-        setBootstrapping(false);
-        return;
-      }
-
-      leagueId = bootstrappedLeagueId;
-    }
-
-    await loadLiveState(session);
-    setSaveStatus("Starter league and topic are ready.");
-    setBootstrapping(false);
-  }
 
   async function handleJoinLeague() {
     if (!supabase || !session || !snapshot) {
@@ -757,32 +714,6 @@ export function LiveCurrentTopicSection() {
     setSettlingTopic(false);
   }
 
-  async function handleChangeLeagueRole(userId: string, role: "admin" | "player") {
-    if (!supabase || !session || !snapshot || !snapshot.league.viewerIsAppAdmin) {
-      return;
-    }
-
-    setChangingRoleUserId(userId);
-    setRoleStatus(null);
-    setError(null);
-
-    const { error: updateError } = await supabase
-      .from("league_members")
-      .update({ role })
-      .eq("league_id", snapshot.league.id)
-      .eq("user_id", userId);
-
-    if (updateError) {
-      setRoleStatus(updateError.message);
-      setChangingRoleUserId(null);
-      return;
-    }
-
-    await loadLiveState(session);
-    setRoleStatus(role === "admin" ? "User is now a league admin." : "User is now a player.");
-    setChangingRoleUserId(null);
-  }
-
   function startEditingTopic(topic: { id: string; title: string; description: string; closeAt: string }) {
     setEditingTopicId(topic.id);
     setEditTitle(topic.title);
@@ -911,22 +842,8 @@ export function LiveCurrentTopicSection() {
 
   if (!snapshot) {
     return (
-      <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-700">
-        {error ? (
-          <p className="text-rose-600">{error}</p>
-        ) : (
-          <div className="space-y-4">
-            <p>No league found for your account yet.</p>
-            <button
-              type="button"
-              onClick={handleBootstrap}
-              disabled={bootstrapping}
-              className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {bootstrapping ? "Creating league…" : "Create league"}
-            </button>
-          </div>
-        )}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-rose-600">
+        {error ?? "League not found."}
       </div>
     );
   }
@@ -1275,39 +1192,12 @@ export function LiveCurrentTopicSection() {
         </div>
       ) : null}
 
-      {/* App admin: role management */}
+      {/* App admin: link to global admin panel */}
       {isAppAdmin ? (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Role management</p>
-          <div className="mt-4 space-y-3">
-            {snapshot.members.map((member) => (
-              <div key={member.userId} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 p-3">
-                <div>
-                  <p className="text-sm font-medium text-zinc-900">{member.displayName}{member.isCurrentUser ? " (you)" : ""}</p>
-                  <p className="text-xs text-zinc-500">{member.role === "admin" ? "league admin" : "player"}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleChangeLeagueRole(member.userId, "admin")}
-                    disabled={changingRoleUserId === member.userId || member.role === "admin"}
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
-                  >
-                    Admin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleChangeLeagueRole(member.userId, "player")}
-                    disabled={changingRoleUserId === member.userId || member.role === "player"}
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
-                  >
-                    Player
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          {roleStatus && <p className="mt-3 text-sm text-zinc-600">{roleStatus}</p>}
+        <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4 text-sm">
+          <Link href="/admin" className="font-medium text-zinc-700 hover:text-zinc-950">
+            Global admin panel →
+          </Link>
         </div>
       ) : null}
     </div>

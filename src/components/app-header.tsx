@@ -120,10 +120,16 @@ export function AppHeader() {
     <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white">
       <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-sm font-semibold text-zinc-950 tracking-tight">
+          <Link href="/leagues" className="text-sm font-semibold text-zinc-950 tracking-tight">
             PoolChain
           </Link>
           <nav className="flex items-center gap-1">
+            <Link
+              href="/leagues"
+              className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
+            >
+              Leagues
+            </Link>
             <Link
               href="/topics"
               className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
