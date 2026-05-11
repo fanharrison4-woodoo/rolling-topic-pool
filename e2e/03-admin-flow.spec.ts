@@ -8,12 +8,12 @@ test.describe("admin: topic management", () => {
   test("sees admin controls on circle page", async ({ page }) => {
     const { circleId } = getTestIds();
     await page.goto(`/circles/${circleId}`);
-    await expect(page.getByRole("button", { name: /create topic/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /circle settings/i })).toBeVisible();
   });
 
   test("creates a draft topic when an open one exists", async ({ page }) => {
     const { circleId } = getTestIds();
-    await page.goto(`/circles/${circleId}`);
+    await page.goto(`/circles/${circleId}/settings`);
 
     const closeDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
     const localClose = closeDate.toISOString().slice(0, 16);
@@ -29,7 +29,7 @@ test.describe("admin: topic management", () => {
   // Edit must run before open — Edit button only visible while status is draft
   test("edits a draft topic", async ({ page }) => {
     const { circleId } = getTestIds();
-    await page.goto(`/circles/${circleId}`);
+    await page.goto(`/circles/${circleId}/settings`);
 
     const draftCard = page.locator(".rounded-xl").filter({ hasText: "Draft topic for testing" });
     await draftCard.getByRole("button", { name: "Edit" }).click();
@@ -44,16 +44,16 @@ test.describe("admin: topic management", () => {
 
   test("opens a draft topic", async ({ page }) => {
     const { circleId } = getTestIds();
-    await page.goto(`/circles/${circleId}`);
+    await page.goto(`/circles/${circleId}/settings`);
 
     const draftCard = page.locator(".rounded-xl").filter({ hasText: "Draft topic (edited)" });
     await draftCard.getByRole("button", { name: "Open" }).click();
-    await expect(page.getByText("Topic opened.")).toBeVisible();
+    await expect(page.getByText("Topic opened.").first()).toBeVisible();
   });
 
   test("closes a topic", async ({ page }) => {
     const { circleId } = getTestIds();
-    await page.goto(`/circles/${circleId}`);
+    await page.goto(`/circles/${circleId}/settings`);
 
     const topic1Card = page.locator(".rounded-xl").filter({ hasText: "Who will win the championship?" });
     await topic1Card.getByRole("button", { name: "Close" }).click();
@@ -72,16 +72,17 @@ test.describe("admin: settlement flow", () => {
   test("settles topic with winners", async ({ page }) => {
     const { circleId, openTopicId } = getTestIds();
     await adminClient.from("topics").update({ status: "closed" }).eq("id", openTopicId);
-    await page.goto(`/circles/${circleId}`);
+    await page.goto(`/circles/${circleId}/settings`);
 
-    const winnerCheckboxes = page.getByLabel("Winner");
-    await expect(winnerCheckboxes.first()).toBeVisible({ timeout: 8000 });
-    await winnerCheckboxes.first().check();
+    // Wait for the settlement section (appears when featured topic is closed)
+    const firstCheckbox = page.locator('input[type="checkbox"]').first();
+    await expect(firstCheckbox).toBeVisible({ timeout: 8000 });
+    await firstCheckbox.check();
 
     await page.getByPlaceholder("Optional resolution note").fill("Team Beta won the championship!");
     await page.getByRole("button", { name: /confirm settlement/i }).click();
 
-    await expect(page.getByText(/Topic settled/).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Settled with \d+ winner/).first()).toBeVisible({ timeout: 10000 });
   });
 
   // These two tests rely on the topic being settled by the previous test — no beforeEach reset
@@ -112,11 +113,11 @@ test.describe("admin: settlement flow", () => {
       created_by: (await adminClient.from("league_members").select("user_id").eq("league_id", circleId).eq("role", "admin").single()).data?.user_id,
     }).select("id").single();
 
-    await page.goto(`/circles/${circleId}`);
+    await page.goto(`/circles/${circleId}/settings`);
     const settleBtn = page.getByRole("button", { name: /confirm settlement/i });
     if (await settleBtn.isVisible()) {
       await settleBtn.click();
-      await expect(page.getByText(/pool carried forward|Topic settled/).first()).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/pool carried forward|Settled with 0 winners/).first()).toBeVisible({ timeout: 10000 });
     }
 
     if (newTopic) await adminClient.from("topics").delete().eq("id", newTopic.id);

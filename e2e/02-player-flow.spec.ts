@@ -7,7 +7,10 @@ test.describe("player flow", () => {
   test("sees their circle and navigates to it", async ({ page }) => {
     const { circleId } = getTestIds();
     await page.goto("/circles");
-    // Single circle → auto-redirects
+    // Circle appears as a card — click through to the circle page
+    const circleCard = page.getByRole("link", { name: /\[TEST\] Prediction Circle/i });
+    await expect(circleCard).toBeVisible({ timeout: 8000 });
+    await circleCard.click();
     await expect(page).toHaveURL(`/circles/${circleId}`, { timeout: 8000 });
   });
 
@@ -15,7 +18,7 @@ test.describe("player flow", () => {
     const { circleId } = getTestIds();
     await page.goto(`/circles/${circleId}`);
     await expect(page.getByRole("heading", { name: "Who will win the championship?" })).toBeVisible();
-    await expect(page.getByText("Your prediction")).toBeVisible();
+    await expect(page.getByText("Your prediction", { exact: true })).toBeVisible();
     await expect(page.getByPlaceholder("Type your prediction here")).toBeVisible();
   });
 

@@ -13,8 +13,20 @@ interface CircleEntry {
   stakeAmount: number;
   currency: string;
   role: "admin" | "player";
-  topicCount: number;
   playerCount: number;
+  membershipOpen: boolean;
+  openTopicTitle: string | null;
+  openTopicCloseAt: string | null;
+}
+
+interface PublicCircle {
+  id: string;
+  name: string;
+  stakeAmount: number;
+  currency: string;
+  memberCount: number;
+  openTopicTitle: string | null;
+  openTopicCloseAt: string | null;
 }
 
 type CreateStep = "idle" | "circle" | "topic";
@@ -27,24 +39,74 @@ function formatMoney(amount: number, currency: string) {
   }).format(amount);
 }
 
-function CircleCard({ circle }: { circle: CircleEntry }) {
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function MyCircleCard({ circle }: { circle: CircleEntry }) {
   return (
     <Link
       href={`/circles/${circle.id}`}
       className="block rounded-2xl border border-zinc-200 bg-white p-5 transition hover:border-zinc-400"
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="font-semibold text-zinc-900">{circle.name}</p>
           <p className="mt-1 text-sm text-zinc-500">
-            {circle.playerCount} player{circle.playerCount === 1 ? "" : "s"} · {circle.topicCount} topic{circle.topicCount === 1 ? "" : "s"} · stake {formatMoney(circle.stakeAmount, circle.currency)}
+            {circle.playerCount} player{circle.playerCount === 1 ? "" : "s"} · stake {formatMoney(circle.stakeAmount, circle.currency)}
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700">
-          {circle.role === "admin" ? "Admin" : "Player"}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700">
+            {circle.role === "admin" ? "Admin" : "Player"}
+          </span>
+          {!circle.membershipOpen && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Membership closed</span>
+          )}
+        </div>
       </div>
+      {circle.openTopicTitle ? (
+        <div className="mt-3 rounded-xl bg-emerald-50 px-4 py-3">
+          <p className="text-xs font-medium text-emerald-700">Open topic</p>
+          <p className="mt-0.5 text-sm font-medium text-zinc-900">{circle.openTopicTitle}</p>
+          {circle.openTopicCloseAt && (
+            <p className="mt-0.5 text-xs text-zinc-500">Closes {formatDate(circle.openTopicCloseAt)}</p>
+          )}
+        </div>
+      ) : (
+        <div className="mt-3 rounded-xl bg-zinc-50 px-4 py-3">
+          <p className="text-xs text-zinc-400">No open topic right now</p>
+        </div>
+      )}
     </Link>
+  );
+}
+
+function PublicCircleCard({ circle, onView }: { circle: PublicCircle; onView: () => void }) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-zinc-900">{circle.name}</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            {circle.memberCount} player{circle.memberCount === 1 ? "" : "s"} · stake {formatMoney(circle.stakeAmount, circle.currency)}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onView}
+          className="shrink-0 rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:border-zinc-500"
+        >
+          View
+        </button>
+      </div>
+      {circle.openTopicTitle && (
+        <div className="mt-3 rounded-xl bg-emerald-50 px-4 py-3">
+          <p className="text-xs font-medium text-emerald-700">Open topic</p>
+          <p className="mt-0.5 text-sm text-zinc-800">{circle.openTopicTitle}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -57,7 +119,12 @@ export function LiveCircleList() {
   const [error, setError] = useState<string | null>(null);
   const [isAppAdmin, setIsAppAdmin] = useState(false);
 
-  // Create circle form state
+  // Browse public circles
+  const [showBrowse, setShowBrowse] = useState(false);
+  const [publicCircles, setPublicCircles] = useState<PublicCircle[]>([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
+
+  // Create circle form
   const [createStep, setCreateStep] = useState<CreateStep>("idle");
   const [circleName, setCircleName] = useState("");
   const [stakeAmount, setStakeAmount] = useState("5");
@@ -66,7 +133,7 @@ export function LiveCircleList() {
   const [newCircleId, setNewCircleId] = useState<string | null>(null);
   const [createCircleError, setCreateCircleError] = useState<string | null>(null);
 
-  // First topic form state
+  // First topic form
   const [topicTitle, setTopicTitle] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
   const [topicCloseAt, setTopicCloseAt] = useState("");
@@ -100,48 +167,89 @@ export function LiveCircleList() {
     }
 
     const rows = membershipsResult.data ?? [];
-    const circleIds = rows.map((r) => (r.leagues as unknown as { id: string } | null)?.id).filter(Boolean) as string[];
+    const circleIds = rows
+      .map((r) => (r.leagues as unknown as { id: string } | null)?.id)
+      .filter(Boolean) as string[];
 
-    let topicCounts = new Map<string, number>();
     let playerCounts = new Map<string, number>();
+    let openTopicByCircle = new Map<string, { title: string; closeAt: string }>();
+    let membershipOpenById = new Map<string, boolean>();
 
     if (circleIds.length > 0) {
-      const [topicsResult, membersResult] = await Promise.all([
-        supabase.from("topics").select("league_id").in("league_id", circleIds),
+      const [membersResult, topicsResult, membershipOpenResult] = await Promise.all([
         supabase.from("league_members").select("league_id").in("league_id", circleIds).eq("is_active", true),
+        supabase
+          .from("topics")
+          .select("league_id, title, close_at")
+          .in("league_id", circleIds)
+          .eq("status", "open")
+          .order("order_index", { ascending: true }),
+        // Separate query for membership_open — silently defaults to true if column doesn't exist yet
+        supabase.from("leagues").select("id, membership_open").in("id", circleIds),
       ]);
 
-      for (const t of topicsResult.data ?? []) {
-        topicCounts.set(t.league_id, (topicCounts.get(t.league_id) ?? 0) + 1);
-      }
       for (const m of membersResult.data ?? []) {
         playerCounts.set(m.league_id, (playerCounts.get(m.league_id) ?? 0) + 1);
+      }
+      // First open topic per circle (results already ordered by order_index)
+      for (const t of topicsResult.data ?? []) {
+        if (!openTopicByCircle.has(t.league_id)) {
+          openTopicByCircle.set(t.league_id, { title: t.title, closeAt: t.close_at });
+        }
+      }
+      for (const l of membershipOpenResult.data ?? []) {
+        membershipOpenById.set(l.id, (l as unknown as { membership_open?: boolean }).membership_open ?? true);
       }
     }
 
     const entries: CircleEntry[] = rows
       .map((r) => {
-        const lg = r.leagues as unknown as { id: string; name: string; stake_amount: number; currency: string } | null;
+        const lg = r.leagues as unknown as {
+          id: string; name: string; stake_amount: number; currency: string;
+        } | null;
         if (!lg) return null;
+        const openTopic = openTopicByCircle.get(lg.id) ?? null;
         return {
           id: lg.id,
           name: lg.name,
           stakeAmount: Number(lg.stake_amount ?? 0),
           currency: lg.currency,
           role: r.role as "admin" | "player",
-          topicCount: topicCounts.get(lg.id) ?? 0,
           playerCount: playerCounts.get(lg.id) ?? 0,
+          membershipOpen: membershipOpenById.get(lg.id) ?? true,
+          openTopicTitle: openTopic?.title ?? null,
+          openTopicCloseAt: openTopic?.closeAt ?? null,
         };
       })
       .filter((e): e is CircleEntry => e !== null);
 
     setCircles(entries);
     setLoading(false);
+  }, [supabase]);
 
-    if (entries.length === 1) {
-      router.replace(`/circles/${entries[0].id}`);
+  async function loadPublicCircles() {
+    if (!supabase || !session) return;
+    setBrowseLoading(true);
+    const { data, error: rpcError } = await supabase.rpc("public_open_circles");
+    if (!rpcError && data) {
+      setPublicCircles(
+        (data as Array<{
+          id: string; name: string; stake_amount: number; currency: string;
+          member_count: number; open_topic_title: string | null; open_topic_close_at: string | null;
+        }>).map((row) => ({
+          id: row.id,
+          name: row.name,
+          stakeAmount: Number(row.stake_amount),
+          currency: row.currency,
+          memberCount: Number(row.member_count),
+          openTopicTitle: row.open_topic_title,
+          openTopicCloseAt: row.open_topic_close_at,
+        })),
+      );
     }
-  }, [supabase, router]);
+    setBrowseLoading(false);
+    setShowBrowse(true);
+  }
 
   useEffect(() => {
     if (!supabase) return;
@@ -232,8 +340,8 @@ export function LiveCircleList() {
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="h-16 animate-pulse rounded-2xl bg-zinc-200" />
-        <div className="h-16 animate-pulse rounded-2xl bg-zinc-100" />
+        <div className="h-24 animate-pulse rounded-2xl bg-zinc-200" />
+        <div className="h-24 animate-pulse rounded-2xl bg-zinc-100" />
       </div>
     );
   }
@@ -326,16 +434,14 @@ export function LiveCircleList() {
             />
           </div>
           {createTopicError && <p className="text-sm text-rose-600">{createTopicError}</p>}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleCreateFirstTopic}
-              disabled={creatingTopic}
-              className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {creatingTopic ? "Creating…" : "Create topic & open circle"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleCreateFirstTopic}
+            disabled={creatingTopic}
+            className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {creatingTopic ? "Creating…" : "Create topic & open circle"}
+          </button>
         </div>
       </div>
     );
@@ -346,41 +452,77 @@ export function LiveCircleList() {
   const hasAdminRole = adminCircles.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {error && <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
 
       {hasAdminRole && (
-        <div>
+        <section>
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Circles I manage</p>
           <div className="space-y-3">
-            {adminCircles.map((circle) => (
-              <CircleCard key={circle.id} circle={circle} />
-            ))}
+            {adminCircles.map((circle) => <MyCircleCard key={circle.id} circle={circle} />)}
           </div>
-        </div>
+        </section>
       )}
 
       {playerCircles.length > 0 && (
-        <div>
+        <section>
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
             {hasAdminRole ? "Circles I play in" : "My circles"}
           </p>
           <div className="space-y-3">
-            {playerCircles.map((circle) => (
-              <CircleCard key={circle.id} circle={circle} />
-            ))}
+            {playerCircles.map((circle) => <MyCircleCard key={circle.id} circle={circle} />)}
           </div>
-        </div>
+        </section>
       )}
 
-      {circles.length === 0 && (
+      {circles.length === 0 && !showBrowse && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600">
           You are not in any circle yet.
         </div>
       )}
 
+      {/* Browse public circles */}
+      {session && !showBrowse && (
+        <button
+          type="button"
+          onClick={loadPublicCircles}
+          disabled={browseLoading}
+          className="text-sm font-medium text-zinc-500 hover:text-zinc-900 disabled:opacity-50"
+        >
+          {browseLoading ? "Loading…" : "Browse open circles →"}
+        </button>
+      )}
+
+      {showBrowse && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Open circles</p>
+            <button
+              type="button"
+              onClick={() => setShowBrowse(false)}
+              className="text-xs text-zinc-400 hover:text-zinc-700"
+            >
+              Hide
+            </button>
+          </div>
+          {publicCircles.length === 0 ? (
+            <p className="text-sm text-zinc-500">No other open circles right now.</p>
+          ) : (
+            <div className="space-y-3">
+              {publicCircles.map((circle) => (
+                <PublicCircleCard
+                  key={circle.id}
+                  circle={circle}
+                  onView={() => router.push(`/circles/${circle.id}`)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {session && (
-        <div>
+        <div className="flex items-center gap-4">
           <button
             type="button"
             onClick={() => setCreateStep("circle")}

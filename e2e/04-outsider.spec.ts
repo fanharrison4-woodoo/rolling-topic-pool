@@ -29,6 +29,6 @@ test.describe("outsider (signed in but not a circle member)", () => {
     await page.getByRole("button", { name: /join circle/i }).click();
     // Success: join button disappears and "Your prediction" section appears
     await expect(page.getByRole("button", { name: /join circle/i })).not.toBeVisible({ timeout: 8000 });
-    await expect(page.getByText("Your prediction")).toBeVisible();
+    await expect(page.getByText("Your prediction", { exact: true })).toBeVisible();
   });
 });

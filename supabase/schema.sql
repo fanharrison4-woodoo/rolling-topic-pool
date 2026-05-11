@@ -11,9 +11,13 @@ create table if not exists public.leagues (
   name text not null,
   stake_amount numeric(10,2) not null check (stake_amount >= 0),
   currency text not null default 'USD',
+  membership_open boolean not null default true,
   created_by uuid not null references auth.users(id) on delete restrict,
   created_at timestamptz not null default now()
 );
+
+-- Migration: add membership_open if upgrading from older schema
+ALTER TABLE public.leagues ADD COLUMN IF NOT EXISTS membership_open boolean NOT NULL DEFAULT true;
 
 create table if not exists public.league_members (
   id uuid primary key default gen_random_uuid(),
@@ -181,36 +185,65 @@ $$;
 grant execute on function public.bootstrap_league(text, numeric, text) to authenticated;
 
 create or replace function public.join_league(target_league uuid)
-returns uuid
+returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  joined_league_id uuid;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
   end if;
 
-  select id into joined_league_id
-  from public.leagues
-  where id = target_league;
-
-  if joined_league_id is null then
+  if not exists (select 1 from public.leagues where id = target_league) then
     raise exception 'League not found';
   end if;
 
-  insert into public.league_members (league_id, user_id, role, is_active)
-  values (joined_league_id, auth.uid(), 'player', true)
-  on conflict (league_id, user_id) do update
-    set is_active = true;
+  if not (select membership_open from public.leagues where id = target_league) then
+    raise exception 'This circle is no longer accepting new members';
+  end if;
 
-  return joined_league_id;
+  insert into public.league_members (league_id, user_id, role, is_active)
+  values (target_league, auth.uid(), 'player', true)
+  on conflict (league_id, user_id) do update
+    set is_active = true, role = 'player';
 end;
 $$;
 
 grant execute on function public.join_league(uuid) to authenticated;
+
+create or replace function public.public_open_circles()
+returns table (
+  id uuid,
+  name text,
+  stake_amount numeric,
+  currency text,
+  member_count bigint,
+  open_topic_title text,
+  open_topic_close_at timestamptz
+)
+language sql
+security definer
+as $$
+  select
+    l.id,
+    l.name,
+    l.stake_amount::numeric,
+    l.currency,
+    count(lm.user_id)::bigint,
+    (select t.title from public.topics t where t.league_id = l.id and t.status = 'open' order by t.order_index limit 1),
+    (select t.close_at from public.topics t where t.league_id = l.id and t.status = 'open' order by t.order_index limit 1)
+  from public.leagues l
+  left join public.league_members lm on lm.league_id = l.id and lm.is_active = true
+  where l.membership_open = true
+    and not exists (
+      select 1 from public.league_members m
+      where m.league_id = l.id and m.user_id = auth.uid() and m.is_active = true
+    )
+  group by l.id, l.name, l.stake_amount, l.currency;
+$$;
+
+grant execute on function public.public_open_circles() to authenticated;
 
 alter table public.users_profile enable row level security;
 alter table public.leagues enable row level security;
