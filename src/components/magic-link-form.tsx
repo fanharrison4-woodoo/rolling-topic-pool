@@ -112,7 +112,7 @@ export function MagicLinkForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
       >
         {submitting ? "Sending..." : "Send magic link"}
       </button>

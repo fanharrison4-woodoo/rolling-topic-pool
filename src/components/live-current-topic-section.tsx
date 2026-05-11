@@ -542,7 +542,7 @@ export function LiveCurrentTopicSection({ circleId }: Props) {
               type="button"
               onClick={handleJoinLeague}
               disabled={joining}
-              className="shrink-0 rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="shrink-0 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {joining ? "Joining…" : "Join circle"}
             </button>
@@ -616,7 +616,7 @@ export function LiveCurrentTopicSection({ circleId }: Props) {
                           type="button"
                           onClick={() => handleSave(topic.id)}
                           disabled={isSaving}
-                          className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          className="rounded-full bg-amber-500 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
                         >
                           {isSaving
                             ? "Saving…"

@@ -695,8 +695,8 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
             disabled={togglingMembership}
             className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium disabled:opacity-50 ${
               snapshot.league.membershipOpen
-                ? "bg-zinc-950 text-white"
-                : "border border-zinc-300 bg-white text-zinc-900"
+                ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
+                : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
             }`}
           >
             {togglingMembership
@@ -760,7 +760,7 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
                 type="button"
                 onClick={handleSettleTopic}
                 disabled={settlingTopic || !settlementEligibility.eligible}
-                className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
               >
                 {settlingTopic ? "Settling…" : "Confirm settlement"}
               </button>
@@ -806,7 +806,7 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
               type="button"
               onClick={handleCreateTopic}
               disabled={creatingTopic}
-              className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {creatingTopic ? "Creating…" : "Create topic"}
             </button>
@@ -903,7 +903,7 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
                         type="button"
                         onClick={() => handleSaveTopicEdit(topic.id)}
                         disabled={savingEdit}
-                        className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                        className="rounded-full bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
                       >
                         {savingEdit ? "Saving…" : "Save"}
                       </button>

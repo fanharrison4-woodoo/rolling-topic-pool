@@ -13,7 +13,7 @@ export default function Home() {
         </p>
         <Link
           href="/circles"
-          className="mt-6 inline-block rounded-full bg-amber-900 px-6 py-2.5 text-sm font-bold text-amber-50 hover:bg-amber-950"
+          className="mt-6 inline-block rounded-full bg-white px-6 py-2.5 text-sm font-bold text-amber-700 hover:bg-amber-50"
         >
           Go to my circles →
         </Link>
@@ -61,14 +61,14 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-white p-6 text-center">
-        <p className="font-semibold text-zinc-900">Ready to play?</p>
-        <p className="mt-1 text-sm text-zinc-500">
+      <div className="rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50 p-6 text-center">
+        <p className="font-semibold text-amber-900">Ready to play?</p>
+        <p className="mt-1 text-sm text-amber-700">
           Sign in above, then browse circles or get invited by a friend.
         </p>
         <Link
           href="/circles"
-          className="mt-4 inline-block rounded-full bg-zinc-950 px-6 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
+          className="mt-4 inline-block rounded-full bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
         >
           Browse circles
         </Link>

@@ -388,7 +388,7 @@ export function LiveCircleList() {
               type="button"
               onClick={handleCreateCircle}
               disabled={creatingCircle}
-              className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {creatingCircle ? "Creating…" : "Continue"}
             </button>
@@ -438,7 +438,7 @@ export function LiveCircleList() {
             type="button"
             onClick={handleCreateFirstTopic}
             disabled={creatingTopic}
-            className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
           >
             {creatingTopic ? "Creating…" : "Create topic & open circle"}
           </button>
@@ -526,7 +526,7 @@ export function LiveCircleList() {
           <button
             type="button"
             onClick={() => setCreateStep("circle")}
-            className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white"
+            className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
           >
             Create a circle
           </button>
