@@ -28,6 +28,7 @@ interface SettingsSnapshot {
     viewerRole: "admin" | "player" | null;
     topicCount: number;
     membershipOpen: boolean;
+    createdBy: string;
   };
   featuredTopicId: string | null;
   topics: {
@@ -150,7 +151,7 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
 
     const leagueResult = await supabase
       .from("leagues")
-      .select("id, name, stake_amount, currency")
+      .select("id, name, stake_amount, currency, created_by")
       .eq("id", circleId)
       .maybeSingle();
 
@@ -334,6 +335,7 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
         viewerRole,
         topicCount: topicsResult.data?.length ?? 0,
         membershipOpen,
+        createdBy: league.created_by,
       },
       featuredTopicId,
       topics: (topicsResult.data ?? []).map((t) => ({
@@ -971,8 +973,9 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
                     <button
                       type="button"
                       onClick={() => handleChangeMemberRole(member.userId, member.role === "admin" ? "player" : "admin")}
-                      disabled={changingMemberUserId === member.userId}
-                      className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs text-zinc-500 hover:border-zinc-400 hover:text-zinc-800 disabled:opacity-40"
+                      disabled={changingMemberUserId === member.userId || (member.role === "admin" && member.userId === snapshot.league.createdBy)}
+                      title={member.userId === snapshot.league.createdBy ? "Circle creator cannot be changed to player" : undefined}
+                      className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs text-zinc-500 hover:border-zinc-400 hover:text-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {changingMemberUserId === member.userId
                         ? "…"
