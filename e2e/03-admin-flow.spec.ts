@@ -62,11 +62,12 @@ test.describe("admin: topic management", () => {
 });
 
 test.describe("admin: settlement flow", () => {
-  test("sees all predictions after topic is closed", async ({ page }) => {
+  test("sees closed topic in past rounds after topic is closed", async ({ page }) => {
     const { circleId, openTopicId } = getTestIds();
     await adminClient.from("topics").update({ status: "closed" }).eq("id", openTopicId);
     await page.goto(`/circles/${circleId}`);
-    await expect(page.getByText("All predictions")).toBeVisible({ timeout: 8000 });
+    // Closed topics appear in the "Past rounds" section
+    await expect(page.getByText("Past rounds")).toBeVisible({ timeout: 8000 });
   });
 
   test("settles topic with winners", async ({ page }) => {
@@ -89,9 +90,8 @@ test.describe("admin: settlement flow", () => {
   test("settled topic shows outcome", async ({ page }) => {
     const { circleId } = getTestIds();
     await page.goto(`/circles/${circleId}`);
-    // After settlement, the topic shows in the All Topics list with settlement info
-    // (the current-topic card now features the next open topic, not the settled one)
-    await expect(page.getByText(/Settled.*winner/).first()).toBeVisible({ timeout: 8000 });
+    // After settlement, the topic appears in "Past rounds" with winner info
+    await expect(page.getByText(/\d+ winner/).first()).toBeVisible({ timeout: 8000 });
   });
 
   test("history page shows settled topic", async ({ page }) => {

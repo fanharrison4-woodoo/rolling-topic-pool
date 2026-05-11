@@ -17,29 +17,30 @@ test.describe("player flow", () => {
   test("sees open topic with prediction form", async ({ page }) => {
     const { circleId } = getTestIds();
     await page.goto(`/circles/${circleId}`);
-    await expect(page.getByRole("heading", { name: "Who will win the championship?" })).toBeVisible();
-    await expect(page.getByText("Your prediction", { exact: true })).toBeVisible();
-    await expect(page.getByPlaceholder("Type your prediction here")).toBeVisible();
+    // Topic title appears in the open topic card
+    await expect(page.getByText("Who will win the championship?")).toBeVisible({ timeout: 8000 });
+    // Prediction form is visible
+    await expect(page.getByPlaceholder("What's your call?")).toBeVisible();
   });
 
   test("submits a prediction", async ({ page }) => {
     const { circleId } = getTestIds();
     await page.goto(`/circles/${circleId}`);
-    const textarea = page.getByPlaceholder("Type your prediction here");
+    const textarea = page.getByPlaceholder("What's your call?");
     await textarea.fill("Team Alpha will win");
-    await page.getByRole("button", { name: /submit prediction/i }).click();
-    await expect(page.getByText("Prediction saved.")).toBeVisible();
-    // The prediction text appears in both the <p> display and the textarea value — scope to the paragraph
+    await page.getByRole("button", { name: /lock in my call/i }).click();
+    await expect(page.getByText("Saved!")).toBeVisible({ timeout: 8000 });
     await expect(page.locator("p").filter({ hasText: "Team Alpha will win" })).toBeVisible();
   });
 
   test("edits an existing prediction", async ({ page }) => {
     const { circleId } = getTestIds();
     await page.goto(`/circles/${circleId}`);
-    const textarea = page.getByPlaceholder("Type your prediction here");
+    // After submitting, the placeholder switches to "Edit your call…"
+    const textarea = page.getByPlaceholder("Edit your call…");
     await textarea.fill("Team Beta will win");
-    await page.getByRole("button", { name: /update prediction/i }).click();
-    await expect(page.getByText("Prediction saved.")).toBeVisible();
+    await page.getByRole("button", { name: /update call/i }).click();
+    await expect(page.getByText("Saved!")).toBeVisible({ timeout: 8000 });
     await expect(page.locator("p").filter({ hasText: "Team Beta will win" })).toBeVisible();
   });
 

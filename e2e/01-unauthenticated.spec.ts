@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("unauthenticated visitor", () => {
-  test("home redirects to /circles", async ({ page }) => {
+  test("home page shows PoolChain landing content", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveURL(/\/circles/);
+    await expect(page).toHaveURL("/");
+    await expect(page.getByText("Make a call. Win the pool.")).toBeVisible();
   });
 
   test("/circles shows sign-in prompt", async ({ page }) => {
