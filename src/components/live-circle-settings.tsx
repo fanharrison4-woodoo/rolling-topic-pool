@@ -130,6 +130,10 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
   const [togglingMembership, setTogglingMembership] = useState(false);
   const [membershipMsg, setMembershipMsg] = useState<string | null>(null);
 
+  // Member role change
+  const [changingMemberUserId, setChangingMemberUserId] = useState<string | null>(null);
+  const [memberRoleMsg, setMemberRoleMsg] = useState<string | null>(null);
+
   const loadState = useCallback(async (activeSession: Session | null) => {
     if (!supabase) return;
 
@@ -625,6 +629,29 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
     setTogglingMembership(false);
   }
 
+  async function handleChangeMemberRole(userId: string, nextRole: "admin" | "player") {
+    if (!supabase || !session || !snapshot) return;
+
+    setChangingMemberUserId(userId);
+    setMemberRoleMsg(null);
+
+    const { error: updateError } = await supabase
+      .from("league_members")
+      .update({ role: nextRole })
+      .eq("league_id", snapshot.league.id)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      setMemberRoleMsg(updateError.message);
+      setChangingMemberUserId(null);
+      return;
+    }
+
+    await loadState(session);
+    setMemberRoleMsg(nextRole === "admin" ? "Promoted to admin." : "Changed to player.");
+    setChangingMemberUserId(null);
+  }
+
   if (!supabase) {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600">
@@ -928,18 +955,33 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
       {snapshot.members.length > 0 ? (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Members ({snapshot.members.length})</p>
+          {memberRoleMsg && <p className="mt-2 text-sm text-zinc-600">{memberRoleMsg}</p>}
           <div className="mt-4 space-y-2">
             {snapshot.members.map((member) => (
-              <div key={member.userId} className="flex items-center justify-between rounded-xl border border-zinc-100 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-zinc-900">
-                    {member.displayName}
-                    {member.isCurrentUser ? <span className="ml-2 text-xs text-zinc-400">(you)</span> : null}
-                  </p>
+              <div key={member.userId} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 px-4 py-3">
+                <p className="text-sm font-medium text-zinc-900">
+                  {member.displayName}
+                  {member.isCurrentUser ? <span className="ml-2 text-xs text-zinc-400">(you)</span> : null}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${member.role === "admin" ? "bg-zinc-950 text-white" : "bg-zinc-100 text-zinc-700"}`}>
+                    {member.role}
+                  </span>
+                  {snapshot.league.viewerRole === "admin" && !member.isCurrentUser && (
+                    <button
+                      type="button"
+                      onClick={() => handleChangeMemberRole(member.userId, member.role === "admin" ? "player" : "admin")}
+                      disabled={changingMemberUserId === member.userId}
+                      className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs text-zinc-500 hover:border-zinc-400 hover:text-zinc-800 disabled:opacity-40"
+                    >
+                      {changingMemberUserId === member.userId
+                        ? "…"
+                        : member.role === "admin"
+                          ? "Make player"
+                          : "Make admin"}
+                    </button>
+                  )}
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${member.role === "admin" ? "bg-zinc-950 text-white" : "bg-zinc-100 text-zinc-700"}`}>
-                  {member.role}
-                </span>
               </div>
             ))}
           </div>

@@ -10,7 +10,6 @@ interface MemberRow {
   memberId: string;
   userId: string;
   displayName: string;
-  email: string;
   leagueId: string;
   leagueName: string;
   role: "admin" | "player";
@@ -23,8 +22,6 @@ export function LiveAdminPanel() {
   const [loading, setLoading] = useState(Boolean(supabase));
   const [error, setError] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
-  const [changingId, setChangingId] = useState<string | null>(null);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const load = useCallback(async (activeSession: Session | null) => {
     if (!supabase) return;
@@ -71,7 +68,6 @@ export function LiveAdminPanel() {
           memberId: r.id,
           userId: r.user_id,
           displayName: profilesById.get(r.user_id) ?? r.user_id,
-          email: "",
           leagueId: lg?.id ?? "",
           leagueName: lg?.name ?? "",
           role: r.role as "admin" | "player",
@@ -101,32 +97,6 @@ export function LiveAdminPanel() {
       subscription.unsubscribe();
     };
   }, [load, supabase]);
-
-  async function handleChangeRole(memberId: string, leagueId: string, userId: string, role: "admin" | "player") {
-    if (!supabase || !session) return;
-
-    setChangingId(memberId);
-    setStatusMsg(null);
-
-    const { error: updateError } = await supabase
-      .from("league_members")
-      .update({ role })
-      .eq("id", memberId)
-      .eq("league_id", leagueId)
-      .eq("user_id", userId);
-
-    if (updateError) {
-      setStatusMsg(updateError.message);
-      setChangingId(null);
-      return;
-    }
-
-    setMembers((prev) =>
-      prev.map((m) => (m.memberId === memberId ? { ...m, role } : m)),
-    );
-    setStatusMsg(role === "admin" ? "Promoted to circle admin." : "Changed to player.");
-    setChangingId(null);
-  }
 
   if (!session && !loading) {
     return (
@@ -165,7 +135,6 @@ export function LiveAdminPanel() {
   return (
     <div className="space-y-6">
       {error && <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
-      {statusMsg && <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-700">{statusMsg}</div>}
 
       {members.length === 0 && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
@@ -181,30 +150,12 @@ export function LiveAdminPanel() {
           <div className="mt-4 space-y-3">
             {leagueMembers.map((m) => (
               <div key={m.memberId} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 p-3">
-                <div>
-                  <p className="text-sm font-medium text-zinc-900">
-                    {m.displayName}{m.isCurrentUser ? " (you)" : ""}
-                  </p>
-                  <p className="text-xs text-zinc-500">{m.role === "admin" ? "circle admin" : "player"}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleChangeRole(m.memberId, m.leagueId, m.userId, "admin")}
-                    disabled={changingId === m.memberId || m.role === "admin"}
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-40"
-                  >
-                    Admin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleChangeRole(m.memberId, m.leagueId, m.userId, "player")}
-                    disabled={changingId === m.memberId || m.role === "player"}
-                    className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-40"
-                  >
-                    Player
-                  </button>
-                </div>
+                <p className="text-sm font-medium text-zinc-900">
+                  {m.displayName}{m.isCurrentUser ? " (you)" : ""}
+                </p>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${m.role === "admin" ? "bg-zinc-950 text-white" : "bg-zinc-100 text-zinc-700"}`}>
+                  {m.role}
+                </span>
               </div>
             ))}
           </div>
