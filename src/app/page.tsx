@@ -3,9 +3,9 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main className="mx-auto max-w-2xl space-y-8 px-4 py-12">
-      <div className="rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 p-8 text-white">
+      <div className="rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 p-8">
         <p className="text-xs font-semibold uppercase tracking-widest text-amber-200">Welcome to</p>
-        <h1 className="mt-1 text-5xl font-bold tracking-tight">PoolChain</h1>
+        <h1 className="mt-1 text-5xl font-bold tracking-tight text-white">PoolChain</h1>
         <p className="mt-3 text-xl font-medium text-amber-100">Make a call. Win the pool.</p>
         <p className="mt-2 text-sm leading-relaxed text-amber-200">
           A rolling prediction pool for your crew. Everyone stakes in, everyone predicts — the
@@ -13,7 +13,7 @@ export default function Home() {
         </p>
         <Link
           href="/circles"
-          className="mt-6 inline-block rounded-full bg-white px-6 py-2.5 text-sm font-bold text-orange-600 hover:bg-amber-50"
+          className="mt-6 inline-block rounded-full bg-amber-900 px-6 py-2.5 text-sm font-bold text-amber-50 hover:bg-amber-950"
         >
           Go to my circles →
         </Link>
@@ -61,7 +61,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="rounded-2xl border-2 border-dashed border-zinc-200 p-6 text-center">
+      <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-white p-6 text-center">
         <p className="font-semibold text-zinc-900">Ready to play?</p>
         <p className="mt-1 text-sm text-zinc-500">
           Sign in above, then browse circles or get invited by a friend.

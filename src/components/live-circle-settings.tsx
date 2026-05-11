@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import {
@@ -124,6 +124,7 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
   const [selectedWinnerUserIds, setSelectedWinnerUserIds] = useState<string[]>([]);
   const [resolutionNote, setResolutionNote] = useState("");
   const [settlingTopic, setSettlingTopic] = useState(false);
+  const prevFeaturedTopicIdRef = useRef<string | null | undefined>(undefined);
 
   // Membership toggle
   const [togglingMembership, setTogglingMembership] = useState(false);
@@ -351,8 +352,11 @@ export function LiveCircleSettings({ circleId }: LiveCircleSettingsProps) {
       contribution: stakeAmount * playerCount,
     });
 
-    setSelectedWinnerUserIds([]);
-    setResolutionNote("");
+    if (prevFeaturedTopicIdRef.current !== featuredTopicId) {
+      prevFeaturedTopicIdRef.current = featuredTopicId;
+      setSelectedWinnerUserIds([]);
+      setResolutionNote("");
+    }
     setLoading(false);
   }, [circleId, supabase]);
 
