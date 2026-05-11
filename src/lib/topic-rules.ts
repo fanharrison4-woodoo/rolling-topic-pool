@@ -14,8 +14,10 @@ export function canLeagueAdminEditTopic(status: TopicStatus) {
   return normalizeTopicStatus(status) === "draft";
 }
 
-export function canPlayerSubmitPrediction(status: TopicStatus) {
-  return normalizeTopicStatus(status) === "open";
+export function canPlayerSubmitPrediction(status: TopicStatus, closeAt?: string) {
+  if (normalizeTopicStatus(status) !== "open") return false;
+  if (closeAt && new Date(closeAt) <= new Date()) return false;
+  return true;
 }
 
 export function canPlayersViewAllPredictions(status: TopicStatus) {

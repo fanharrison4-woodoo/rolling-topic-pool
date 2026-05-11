@@ -35,6 +35,14 @@ describe("topic-rules", () => {
     expect(canPlayerSubmitPrediction("settled")).toBe(false);
   });
 
+  it("blocks player submissions when close time has passed even if status is open", () => {
+    const pastClose = new Date(Date.now() - 1000).toISOString();
+    const futureClose = new Date(Date.now() + 60_000).toISOString();
+    expect(canPlayerSubmitPrediction("open", pastClose)).toBe(false);
+    expect(canPlayerSubmitPrediction("open", futureClose)).toBe(true);
+    expect(canPlayerSubmitPrediction("closed", pastClose)).toBe(false);
+  });
+
   it("reveals all predictions only after a topic closes", () => {
     expect(canPlayersViewAllPredictions("draft")).toBe(false);
     expect(canPlayersViewAllPredictions("upcoming")).toBe(false);

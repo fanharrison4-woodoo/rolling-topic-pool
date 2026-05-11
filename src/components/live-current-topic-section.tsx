@@ -392,6 +392,12 @@ export function LiveCurrentTopicSection({ circleId }: Props) {
   async function handleSave(topicId: string) {
     if (!supabase || !session || !snapshot?.league.viewerRole) return;
 
+    const topic = snapshot.openTopics.find((t) => t.id === topicId);
+    if (!topic || new Date(topic.closeAt) <= new Date()) {
+      setSaveStatuses((prev) => ({ ...prev, [topicId]: "Predictions are closed for this topic." }));
+      return;
+    }
+
     const draftText = (drafts[topicId] ?? "").trim();
     if (!draftText) {
       setSaveStatuses((prev) => ({ ...prev, [topicId]: "Prediction can't be empty." }));
@@ -571,15 +577,16 @@ export function LiveCurrentTopicSection({ circleId }: Props) {
             const isSaving = savingTopics.has(topic.id);
             const saveStatus = saveStatuses[topic.id] ?? null;
             const draft = drafts[topic.id] ?? "";
+            const isPastClose = new Date(topic.closeAt) <= new Date();
 
             return (
               <div
                 key={topic.id}
-                className="rounded-3xl border-2 border-emerald-200 bg-white p-6"
+                className={`rounded-3xl border-2 bg-white p-6 ${isPastClose ? "border-zinc-200" : "border-emerald-200"}`}
               >
                 <div>
-                  <span className="inline-block rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">
-                    Open · Round #{topic.order}
+                  <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${isPastClose ? "bg-zinc-100 text-zinc-600" : "bg-emerald-100 text-emerald-700"}`}>
+                    {isPastClose ? "Awaiting close" : "Open"} · Round #{topic.order}
                   </span>
                   <h2 className="mt-2 text-xl font-bold tracking-tight text-zinc-900">
                     {topic.title}
@@ -587,10 +594,23 @@ export function LiveCurrentTopicSection({ circleId }: Props) {
                   {topic.description && (
                     <p className="mt-1 text-sm text-zinc-600">{topic.description}</p>
                   )}
-                  <p className="mt-2 text-xs text-zinc-400">Closes {formatDate(topic.closeAt)}</p>
+                  <p className="mt-2 text-xs text-zinc-400">
+                    {isPastClose ? "Closed" : "Closes"} {formatDate(topic.closeAt)}
+                  </p>
                 </div>
 
-                {isMember ? (
+                {isPastClose ? (
+                  <div className="mt-5 border-t border-zinc-100 pt-5">
+                    {topic.userPrediction ? (
+                      <div className="rounded-xl bg-zinc-50 px-4 py-3">
+                        <p className="text-xs font-medium text-zinc-500">Your locked-in call</p>
+                        <p className="mt-1 font-medium text-zinc-900">{topic.userPrediction.text}</p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">Predictions are now closed.</p>
+                    )}
+                  </div>
+                ) : isMember ? (
                   <div className="mt-5 border-t border-zinc-100 pt-5">
                     {topic.userPrediction && (
                       <div className="mb-3 rounded-xl bg-zinc-50 px-4 py-3">
