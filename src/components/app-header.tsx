@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { MagicLinkForm } from "@/components/magic-link-form";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
+import { isAppAdminEmail } from "@/lib/app-admins";
 
 export function AppHeader() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -120,7 +121,7 @@ export function AppHeader() {
     <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white">
       <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-6">
-          <Link href="/circles" className="text-sm font-semibold text-zinc-950 tracking-tight">
+          <Link href="/" className="text-sm font-semibold text-zinc-950 tracking-tight">
             PoolChain
           </Link>
           <nav className="flex items-center gap-1">
@@ -142,6 +143,14 @@ export function AppHeader() {
             >
               History
             </Link>
+            {isAppAdminEmail(session?.user.email) && (
+              <Link
+                href="/admin"
+                className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
+              >
+                Admin
+              </Link>
+            )}
           </nav>
         </div>
 
