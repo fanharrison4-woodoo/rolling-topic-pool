@@ -13,6 +13,8 @@ interface LiveCircleBrowserProps {
 
 interface BrowserItem {
   id: string;
+  leagueId: string;
+  leagueName: string;
   order: number;
   title: string;
   description: string;
@@ -79,31 +81,50 @@ export function LiveCircleBrowser({ mode }: LiveCircleBrowserProps) {
     setLoading(true);
     setError(null);
 
-    const leagueResult = await supabase.from("leagues").select("id, currency").limit(1).maybeSingle();
-    if (leagueResult.error || !leagueResult.data) {
-      setError(leagueResult.error?.message ?? "No circle found");
+    // Fetch all circles the user is a member of
+    const myMembershipsResult = await supabase
+      .from("league_members")
+      .select("league_id")
+      .eq("user_id", activeSession.user.id)
+      .eq("is_active", true);
+
+    if (myMembershipsResult.error) {
+      setError(myMembershipsResult.error.message);
       setLoading(false);
       return;
     }
 
-    const leagueId = leagueResult.data.id;
-    const [membersResult, topicsResult] = await Promise.all([
-      supabase.from("league_members").select("user_id").eq("league_id", leagueId).eq("is_active", true),
+    const leagueIds = (myMembershipsResult.data ?? []).map((m) => m.league_id);
+    if (leagueIds.length === 0) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+
+    const [leaguesResult, allMembersResult, topicsResult] = await Promise.all([
+      supabase.from("leagues").select("id, name, currency").in("id", leagueIds),
+      supabase.from("league_members").select("league_id, user_id").in("league_id", leagueIds).eq("is_active", true),
       supabase
         .from("topics")
-        .select("id, order_index, title, description, status, close_at")
-        .eq("league_id", leagueId)
+        .select("id, league_id, order_index, title, description, status, close_at")
+        .in("league_id", leagueIds)
         .order("order_index", { ascending: true }),
     ]);
 
-    const firstError = membersResult.error ?? topicsResult.error;
+    const firstError = leaguesResult.error ?? allMembersResult.error ?? topicsResult.error;
     if (firstError) {
       setError(firstError.message);
       setLoading(false);
       return;
     }
 
-    const topicIds = (topicsResult.data ?? []).map((topic) => topic.id);
+    const leagueById = new Map((leaguesResult.data ?? []).map((l) => [l.id, l]));
+    const playerCountByLeague = new Map<string, number>();
+    for (const row of allMembersResult.data ?? []) {
+      playerCountByLeague.set(row.league_id, (playerCountByLeague.get(row.league_id) ?? 0) + 1);
+    }
+
+    const topicIds = (topicsResult.data ?? []).map((t) => t.id);
     const [predictionsResult, settlementsResult] = await Promise.all([
       topicIds.length > 0
         ? supabase.from("predictions").select("topic_id").in("topic_id", topicIds)
@@ -151,7 +172,7 @@ export function LiveCircleBrowser({ mode }: LiveCircleBrowserProps) {
         return;
       }
 
-      const profilesById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.display_name]));
+      const profilesById = new Map((profilesResult.data ?? []).map((p) => [p.id, p.display_name]));
       for (const winnerRow of winnerRowsResult.data ?? []) {
         const current = winnerNamesBySettlementId.get(winnerRow.settlement_id) ?? [];
         current.push(profilesById.get(winnerRow.user_id) ?? winnerRow.user_id);
@@ -173,20 +194,25 @@ export function LiveCircleBrowser({ mode }: LiveCircleBrowserProps) {
       ]),
     );
 
-    const nextItems = (topicsResult.data ?? []).map((topic) => ({
-      id: topic.id,
-      order: topic.order_index,
-      title: topic.title,
-      description: topic.description ?? "",
-      status: topic.status,
-      closeAt: topic.close_at,
-      predictionCount: predictionCounts.get(topic.id) ?? 0,
-      playerCount: membersResult.data?.length ?? 0,
-      settlement: settlementByTopicId.get(topic.id) ?? null,
-    }));
+    const nextItems = (topicsResult.data ?? []).map((topic) => {
+      const league = leagueById.get(topic.league_id);
+      return {
+        id: topic.id,
+        leagueId: topic.league_id,
+        leagueName: league?.name ?? "",
+        order: topic.order_index,
+        title: topic.title,
+        description: topic.description ?? "",
+        status: topic.status,
+        closeAt: topic.close_at,
+        predictionCount: predictionCounts.get(topic.id) ?? 0,
+        playerCount: playerCountByLeague.get(topic.league_id) ?? 0,
+        settlement: settlementByTopicId.get(topic.id) ?? null,
+      };
+    });
 
     setItems(mode === "history" ? nextItems.filter((item) => getTopicDisplayStatus(item.status) === "settled") : nextItems);
-    setCurrency(leagueResult.data.currency);
+    setCurrency(leaguesResult.data?.[0]?.currency ?? "USD");
     setLoading(false);
   }, [mode, supabase]);
 
@@ -230,6 +256,7 @@ export function LiveCircleBrowser({ mode }: LiveCircleBrowserProps) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-medium text-white">#{item.order}</span>
                   <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusTone(item.status)}`}>{getTopicDisplayStatus(item.status)}</span>
+                  <Link href={`/circles/${item.leagueId}`} className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200">{item.leagueName}</Link>
                 </div>
                 <p className="mt-2 text-lg font-semibold text-zinc-900">{item.title}</p>
                 <p className="mt-1 text-zinc-600">{item.description}</p>
